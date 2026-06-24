@@ -15,4 +15,5 @@ public:
     JobId enqueue(const std::string& payload);
     std::optional<Job> get(const JobId& id);
     std::vector<Job> getAll();
+    bool remove(const JobId& id);
 };

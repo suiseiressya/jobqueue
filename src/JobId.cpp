@@ -9,7 +9,7 @@ JobId::JobId(const uuid_t& uuid) {
     uuid_copy(value, uuid);
 }
 
-static JobId generate() {
+JobId JobId::generate() {
     uuid_t uuid;
     uuid_generate(uuid);
     return JobId(uuid);

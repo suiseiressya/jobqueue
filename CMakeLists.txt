@@ -31,7 +31,8 @@ add_executable(jobqueue
     src/main.cpp
     src/JobQueue.cpp
     src/JobService.cpp
-    src/http_server.cpp
+    src/HttpServer.cpp
+    src/JobId.cpp
 )
 
 target_include_directories(jobqueue PRIVATE ${CMAKE_SOURCE_DIR}/src)

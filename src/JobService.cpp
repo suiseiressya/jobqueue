@@ -31,3 +31,8 @@ std::vector<Job> JobService::getAll() {
 
     return results;
 }
+
+bool JobService::remove(const JobId& id) {
+    std::lock_guard guard(_queueMutex);
+    return _jobs.erase(id) > 0;
+}
