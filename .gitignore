@@ -1,0 +1,88 @@
+# Build directories
+build/
+Build/
+cmake-build-*/
+dist/
+bin/
+lib/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+CTestTestfile.cmake
+DartConfiguration.tcl
+*.cmake
+!CMakeLists.txt
+
+# Compiled binaries and libraries
+*.o
+*.a
+*.lib
+*.dll
+*.dylib
+*.so
+*.so.*
+*.exe
+*.out
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+*.sublime-project
+*.sublime-workspace
+.vs/
+.vsconfig
+
+# IDE caches
+.clangd/
+compile_commands.json
+
+# Testing
+Testing/
+CTestTestfile.cmake
+*.test
+gtest.a
+googletest/
+
+# Dependencies
+_deps/
+vcpkg_installed/
+conan/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*.swp
+*.log
+*.tlog
+
+# C++ specific
+*.gcov
+*.gcda
+*.gcno
+
+# Doxygen
+html/
+latex/
+
+# Misc
+.cache/
+.ccls-cache/
+*.tar.gz
+*.zip
