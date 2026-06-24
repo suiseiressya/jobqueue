@@ -70,3 +70,7 @@ void HttpServer::setupRoutes() {
 void HttpServer::listen(const std::string& host, int port) {
     _server.listen(host, port);
 }
+
+void HttpServer::stop() {
+    _server.stop();
+}

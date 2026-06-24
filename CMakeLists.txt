@@ -57,12 +57,18 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(tests
     tests/TestJobQueue.cpp
     tests/TestJobService.cpp
+    tests/TestHttpServer.cpp
+    src/HttpServer.cpp
+    src/JobService.cpp
+    src/JobQueue.cpp
+    src/JobId.cpp
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(tests
     PRIVATE
         Catch2::Catch2WithMain
+        httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
         pthread
@@ -71,3 +77,38 @@ target_link_libraries(tests
 include(CTest)
 include(Catch)
 catch_discover_tests(tests)
+
+# TSan build
+add_executable(tests_tsan EXCLUDE_FROM_ALL
+    tests/TestJobService.cpp
+    src/JobService.cpp
+    src/JobQueue.cpp
+    src/JobId.cpp
+)
+target_include_directories(tests_tsan PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(tests_tsan PRIVATE -fsanitize=thread -g)
+target_link_options(tests_tsan PRIVATE -fsanitize=thread)
+target_link_libraries(tests_tsan
+    PRIVATE
+        Catch2::Catch2WithMain
+        nlohmann_json::nlohmann_json
+        PkgConfig::UUID
+        pthread
+)
+
+# Helgrind-compatible build (debug symbols, no TSan)
+add_executable(tests_helgrind EXCLUDE_FROM_ALL
+    tests/TestJobService.cpp
+    src/JobService.cpp
+    src/JobQueue.cpp
+    src/JobId.cpp
+)
+target_include_directories(tests_helgrind PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_options(tests_helgrind PRIVATE -g -O0)
+target_link_libraries(tests_helgrind
+    PRIVATE
+        Catch2::Catch2WithMain
+        nlohmann_json::nlohmann_json
+        PkgConfig::UUID
+        pthread
+)

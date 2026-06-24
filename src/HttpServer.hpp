@@ -13,4 +13,5 @@ private:
 public:
     explicit HttpServer(JobService& jobService);
     void listen(const std::string& host, int port);
+    void stop();
 };
