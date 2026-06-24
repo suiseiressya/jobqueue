@@ -1,6 +1,11 @@
 #include "JobService.hpp"
 #include "Job.hpp"
 
+/**
+Creates a new job from payload. 
+@param payload: payload string
+@return JobId of newly created job
+*/
 JobId JobService::enqueue(const std::string& payload) {
     std::lock_guard guard(_queueMutex);
 
@@ -13,6 +18,10 @@ JobId JobService::enqueue(const std::string& payload) {
     return jobId;
 }
 
+/**
+Get a job based on its JobId. 
+@return std::optional<Job>: empty if no job found, else the Job associated with JobId
+*/
 std::optional<Job> JobService::get(const JobId& id) {
     std::lock_guard guard(_queueMutex);
 
@@ -21,6 +30,10 @@ std::optional<Job> JobService::get(const JobId& id) {
     return it->second;
 }
 
+/**
+Get all current jobs.
+@return vector<Job> of all jobs
+*/
 std::vector<Job> JobService::getAll() {
     std::lock_guard guard(_queueMutex);
 
@@ -32,6 +45,10 @@ std::vector<Job> JobService::getAll() {
     return results;
 }
 
+/**
+Remove a job based on JobId. 
+@return true if successful, false if not
+*/
 bool JobService::remove(const JobId& id) {
     std::lock_guard guard(_queueMutex);
     return _jobs.erase(id) > 0;

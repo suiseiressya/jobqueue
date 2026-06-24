@@ -21,7 +21,15 @@ HttpServer::HttpServer(JobService& jobService) : _jobService(jobService) {
     setupRoutes();
 }
 
+/**
+Route setup. All routes go here. 
+*/
 void HttpServer::setupRoutes() {
+    /**
+    POST /jobs, requestbody: {"payload": <job payload>}
+    Create a new job with payload and enqueue it.
+    @return a JSON object of the created job
+    */
     _server.Post("/jobs", [this](const Request& req, Response& res) {
         auto body = json::parse(req.body, nullptr, false);
         if (body.is_discarded() || !body.contains("payload")) {
@@ -37,6 +45,11 @@ void HttpServer::setupRoutes() {
         res.set_content(jobToJson(*job).dump(), "application/json");
     });
 
+    /**
+    GET /jobs 
+    Get all jobs.
+    @return a JSON object containing all jobs
+    */
     _server.Get("/jobs", [this](const Request& req, Response& res) {
         auto jobs = _jobService.getAll();
         auto arr = json::array();
@@ -46,6 +59,11 @@ void HttpServer::setupRoutes() {
         res.set_content(arr.dump(), "application/json");
     });
 
+    /**
+    GET /jobs/:id
+    Get a job with its id. 
+    @return a JSON object with the job found, or 404 if not found
+    */
     _server.Get("/jobs/:id", [this](const Request& req, Response& res) {
         auto job = _jobService.get(JobId(req.path_params.at("id")));
         if (!job) {
@@ -56,6 +74,11 @@ void HttpServer::setupRoutes() {
         res.set_content(jobToJson(*job).dump(), "application/json");
     });
 
+    /**
+    DELETE /jobs/:id
+    Delete a job by its id. 
+    @return 204 if success, 404 if fail
+    */
     _server.Delete("/jobs/:id", [this](const Request& req, Response& res) {
         auto removed = _jobService.remove(JobId(req.path_params.at("id")));
         if (!removed) {

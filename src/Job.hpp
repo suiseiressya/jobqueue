@@ -6,6 +6,10 @@
 
 enum Status { PENDING, RUNNING, DONE, FAILED };
 
+/**
+Job class. 
+Contains id, payload, status, created time, retry count
+*/
 struct Job {
     JobId id;
     std::string payload;
