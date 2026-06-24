@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(jobqueue LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -29,8 +29,8 @@ pkg_check_modules(UUID REQUIRED IMPORTED_TARGET uuid)
 
 add_executable(jobqueue
     src/main.cpp
-    src/job_queue.cpp
-    src/job_service.cpp
+    src/JobQueue.cpp
+    src/JobService.cpp
     src/http_server.cpp
 )
 
@@ -54,8 +54,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(tests
-    tests/test_job_queue.cpp
-    tests/test_job_service.cpp
+    tests/TestJobQueue.cpp
+    tests/TestJobService.cpp
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
