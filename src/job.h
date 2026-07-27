@@ -2,12 +2,12 @@
 #include <chrono>
 #include <string>
 
-#include "JobId.hpp"
+#include "job_id.h"
 
-enum Status { PENDING, RUNNING, DONE, FAILED };
+enum Status { kPending, kRunning, kDone, kFailed };
 
 /**
-Job class. 
+Job class.
 Contains id, payload, status, created time, retry count
 */
 struct Job {
@@ -21,7 +21,7 @@ struct Job {
     Job(JobId id, const std::string& payload)
         : id(id),
           payload(payload),
-          status(PENDING),
+          status(kPending),
           created_at(std::chrono::system_clock::now()),
           retry_count(0) {}
 };

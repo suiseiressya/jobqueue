@@ -5,35 +5,35 @@
 #include <thread>
 #include <vector>
 
-#include "JobService.hpp"
+#include "job_service.h"
 
 TEST_CASE("JobService enqueue creates job with correct state") {
     JobService svc;
-    auto id = svc.enqueue("test-payload");
+    auto id = svc.Enqueue("test-payload");
 
-    auto job = svc.get(id);
+    auto job = svc.Get(id);
     REQUIRE(job.has_value());
     REQUIRE(job->payload == "test-payload");
-    REQUIRE(job->status == PENDING);
+    REQUIRE(job->status == kPending);
     REQUIRE(job->retry_count == 0);
     REQUIRE(job->id == id);
 }
 
 TEST_CASE("JobService get returns nullopt for unknown id") {
     JobService svc;
-    auto id = JobId::generate();
-    REQUIRE_FALSE(svc.get(id).has_value());
+    auto id = JobId::Generate();
+    REQUIRE_FALSE(svc.Get(id).has_value());
 }
 
 TEST_CASE("JobService getAll returns all enqueued jobs") {
     JobService svc;
-    REQUIRE(svc.getAll().empty());
+    REQUIRE(svc.GetAll().empty());
 
-    svc.enqueue("a");
-    svc.enqueue("b");
-    svc.enqueue("c");
+    svc.Enqueue("a");
+    svc.Enqueue("b");
+    svc.Enqueue("c");
 
-    auto all = svc.getAll();
+    auto all = svc.GetAll();
     REQUIRE(all.size() == 3);
 
     std::set<std::string> payloads;
@@ -45,16 +45,16 @@ TEST_CASE("JobService getAll returns all enqueued jobs") {
 
 TEST_CASE("JobService remove deletes job") {
     JobService svc;
-    auto id = svc.enqueue("to-delete");
+    auto id = svc.Enqueue("to-delete");
 
-    REQUIRE(svc.remove(id));
-    REQUIRE_FALSE(svc.get(id).has_value());
-    REQUIRE(svc.getAll().empty());
+    REQUIRE(svc.Remove(id));
+    REQUIRE_FALSE(svc.Get(id).has_value());
+    REQUIRE(svc.GetAll().empty());
 }
 
 TEST_CASE("JobService remove returns false for unknown id") {
     JobService svc;
-    REQUIRE_FALSE(svc.remove(JobId::generate()));
+    REQUIRE_FALSE(svc.Remove(JobId::Generate()));
 }
 
 TEST_CASE("JobService each enqueue generates unique id") {
@@ -62,8 +62,8 @@ TEST_CASE("JobService each enqueue generates unique id") {
     std::set<std::string> ids;
 
     for (int i = 0; i < 100; i++) {
-        auto id = svc.enqueue("job-" + std::to_string(i));
-        ids.insert(id.to_string());
+        auto id = svc.Enqueue("job-" + std::to_string(i));
+        ids.insert(id.ToString());
     }
 
     REQUIRE(ids.size() == 100);
@@ -73,90 +73,90 @@ TEST_CASE("JobService each enqueue generates unique id") {
 
 TEST_CASE("JobService concurrent enqueue") {
     JobService svc;
-    constexpr int numThreads = 8;
-    constexpr int jobsPerThread = 1000;
+    constexpr int kNumThreads = 8;
+    constexpr int kJobsPerThread = 1000;
 
     std::vector<std::thread> threads;
-    std::vector<std::vector<JobId>> results(numThreads);
+    std::vector<std::vector<JobId>> results(kNumThreads);
 
-    for (int t = 0; t < numThreads; t++) {
+    for (int t = 0; t < kNumThreads; t++) {
         threads.emplace_back([&svc, &results, t] {
-            for (int i = 0; i < jobsPerThread; i++) {
-                results[t].push_back(svc.enqueue("t" + std::to_string(t) + "-" + std::to_string(i)));
+            for (int i = 0; i < kJobsPerThread; i++) {
+                results[t].push_back(svc.Enqueue("t" + std::to_string(t) + "-" + std::to_string(i)));
             }
         });
     }
 
     for (auto& th : threads) th.join();
 
-    auto all = svc.getAll();
-    REQUIRE(all.size() == numThreads * jobsPerThread);
+    auto all = svc.GetAll();
+    REQUIRE(all.size() == kNumThreads * kJobsPerThread);
 
-    std::set<std::string> uniqueIds;
-    for (const auto& j : all) uniqueIds.insert(j.id.to_string());
-    REQUIRE(uniqueIds.size() == numThreads * jobsPerThread);
+    std::set<std::string> unique_ids;
+    for (const auto& j : all) unique_ids.insert(j.id.ToString());
+    REQUIRE(unique_ids.size() == kNumThreads * kJobsPerThread);
 }
 
 TEST_CASE("JobService concurrent enqueue and get") {
     JobService svc;
-    constexpr int numOps = 1000;
+    constexpr int kNumOps = 1000;
 
     std::vector<std::thread> threads;
 
     threads.emplace_back([&svc] {
-        for (int i = 0; i < numOps; i++) {
-            svc.enqueue("writer-" + std::to_string(i));
+        for (int i = 0; i < kNumOps; i++) {
+            svc.Enqueue("writer-" + std::to_string(i));
         }
     });
 
     threads.emplace_back([&svc] {
-        for (int i = 0; i < numOps; i++) {
-            svc.getAll();
+        for (int i = 0; i < kNumOps; i++) {
+            svc.GetAll();
         }
     });
 
     threads.emplace_back([&svc] {
-        for (int i = 0; i < numOps; i++) {
-            svc.get(JobId::generate());
+        for (int i = 0; i < kNumOps; i++) {
+            svc.Get(JobId::Generate());
         }
     });
 
     for (auto& th : threads) th.join();
 
-    REQUIRE(svc.getAll().size() == numOps);
+    REQUIRE(svc.GetAll().size() == kNumOps);
 }
 
 TEST_CASE("JobService concurrent enqueue and remove") {
     JobService svc;
-    constexpr int numJobs = 1000;
+    constexpr int kNumJobs = 1000;
 
     std::vector<JobId> ids;
-    for (int i = 0; i < numJobs; i++) {
-        ids.push_back(svc.enqueue("job-" + std::to_string(i)));
+    for (int i = 0; i < kNumJobs; i++) {
+        ids.push_back(svc.Enqueue("job-" + std::to_string(i)));
     }
 
     std::vector<std::thread> threads;
 
     threads.emplace_back([&svc] {
         for (int i = 0; i < 50; i++) {
-            svc.enqueue("extra-" + std::to_string(i));
+            svc.Enqueue("extra-" + std::to_string(i));
         }
     });
 
     threads.emplace_back([&svc, &ids] {
         for (int i = 0; i < 100; i++) {
-            svc.remove(ids[i]);
+            svc.Remove(ids[i]);
         }
     });
 
     threads.emplace_back([&svc] {
         for (int i = 0; i < 100; i++) {
-            svc.getAll();
+            svc.GetAll();
         }
     });
 
     for (auto& th : threads) th.join();
 
-    auto remaining = svc.getAll();
-    REQUIRE(remaining.size() == (numJobs - 100 + 50));
+    auto remaining = svc.GetAll();
+    REQUIRE(remaining.size() == (kNumJobs - 100 + 50));
 }

@@ -28,11 +28,11 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(UUID REQUIRED IMPORTED_TARGET uuid)
 
 add_executable(jobqueue
-    src/main.cpp
-    src/JobQueue.cpp
-    src/JobService.cpp
-    src/HttpServer.cpp
-    src/JobId.cpp
+    src/main.cc
+    src/job_queue.cc
+    src/job_service.cc
+    src/http_server.cc
+    src/job_id.cc
 )
 
 target_include_directories(jobqueue PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -55,13 +55,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(tests
-    tests/TestJobQueue.cpp
-    tests/TestJobService.cpp
-    tests/TestHttpServer.cpp
-    src/HttpServer.cpp
-    src/JobService.cpp
-    src/JobQueue.cpp
-    src/JobId.cpp
+    tests/job_queue_test.cc
+    tests/job_service_test.cc
+    tests/http_server_test.cc
+    src/http_server.cc
+    src/job_service.cc
+    src/job_queue.cc
+    src/job_id.cc
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -80,10 +80,10 @@ catch_discover_tests(tests)
 
 # TSan build
 add_executable(tests_tsan EXCLUDE_FROM_ALL
-    tests/TestJobService.cpp
-    src/JobService.cpp
-    src/JobQueue.cpp
-    src/JobId.cpp
+    tests/job_service_test.cc
+    src/job_service.cc
+    src/job_queue.cc
+    src/job_id.cc
 )
 target_include_directories(tests_tsan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(tests_tsan PRIVATE -fsanitize=thread -g)
@@ -98,10 +98,10 @@ target_link_libraries(tests_tsan
 
 # Helgrind-compatible build (debug symbols, no TSan)
 add_executable(tests_helgrind EXCLUDE_FROM_ALL
-    tests/TestJobService.cpp
-    src/JobService.cpp
-    src/JobQueue.cpp
-    src/JobId.cpp
+    tests/job_service_test.cc
+    src/job_service.cc
+    src/job_queue.cc
+    src/job_id.cc
 )
 target_include_directories(tests_helgrind PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(tests_helgrind PRIVATE -g -O0)
