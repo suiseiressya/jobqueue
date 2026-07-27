@@ -14,6 +14,7 @@ JobId JobService::enqueue(const std::string& payload) {
 
     _jobs[jobId] = job;
     _jobQueue.push(jobId);
+    _cv.notify_one();
 
     return jobId;
 }
@@ -52,4 +53,27 @@ Remove a job based on JobId.
 bool JobService::remove(const JobId& id) {
     std::lock_guard guard(_queueMutex);
     return _jobs.erase(id) > 0;
+}
+
+std::optional<JobId> JobService::wait_and_pop() {
+    std::unique_lock lock(_queueMutex);
+
+    _cv.wait(lock, [&] {
+        return _shutdown || _jobQueue.top().has_value();
+    });
+
+    if (_shutdown) return {};
+
+    JobId jobId = _jobQueue.pop().value();
+    _jobs[jobId].status = RUNNING;
+    lock.unlock();
+
+    return jobId;
+}
+
+void JobService::shutdown() {
+    std::lock_guard guard(_queueMutex);
+
+    _shutdown = true;
+    _cv.notify_all();
 }
