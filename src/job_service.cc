@@ -7,7 +7,7 @@ Creates a new job from payload.
 @return JobId of newly created job
 */
 JobId JobService::Enqueue(const std::string& payload) {
-    std::lock_guard guard(queue_mutex_);
+    std::lock_guard guard(mut_);
 
     JobId job_id = JobId::Generate();
     Job job = Job(job_id, payload);
@@ -24,7 +24,7 @@ Get a job based on its JobId.
 @return std::optional<Job>: empty if no job found, else the Job associated with JobId
 */
 std::optional<Job> JobService::Get(const JobId& id) {
-    std::lock_guard guard(queue_mutex_);
+    std::lock_guard guard(mut_);
 
     auto it = jobs_.find(id);
     if (it == jobs_.end()) return {};
@@ -36,7 +36,7 @@ Get all current jobs.
 @return vector<Job> of all jobs
 */
 std::vector<Job> JobService::GetAll() {
-    std::lock_guard guard(queue_mutex_);
+    std::lock_guard guard(mut_);
 
     std::vector<Job> results;
     for (const auto& [k, v] : jobs_) {
@@ -51,12 +51,12 @@ Remove a job based on JobId.
 @return true if successful, false if not
 */
 bool JobService::Remove(const JobId& id) {
-    std::lock_guard guard(queue_mutex_);
+    std::lock_guard guard(mut_);
     return jobs_.erase(id) > 0;
 }
 
 std::optional<JobId> JobService::WaitAndPop() {
-    std::unique_lock lock(queue_mutex_);
+    std::unique_lock lock(mut_);
 
     cv_.wait(lock, [&] {
         return shutdown_ || job_queue_.Top().has_value();
@@ -72,8 +72,20 @@ std::optional<JobId> JobService::WaitAndPop() {
 }
 
 void JobService::Shutdown() {
-    std::lock_guard guard(queue_mutex_);
+    std::lock_guard guard(mut_);
 
     shutdown_ = true;
     cv_.notify_all();
+}
+
+/**
+Mark a job as done (finished). 
+Still keep inside jobs_. TODO: decide final behavior
+*/
+void JobService::Finish(JobId const& job_id) {
+    std::lock_guard guard(mut_);
+
+    auto it = jobs_.find(job_id);
+    if (it != jobs_.end()) it->second.status = kDone;
+    job_queue_.Remove(job_id);
 }

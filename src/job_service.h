@@ -19,13 +19,13 @@ private:
     std::unordered_map<JobId, Job> jobs_;
 
     /// Mutex for this job queue
-    std::mutex queue_mutex_;
+    std::mutex mut_;
 
     /// condition variable
     std::condition_variable cv_;
 
     /// Shutdown. Use to kill all threads when program terminate
-    bool shutdown_;
+    bool shutdown_ = false;
 
 public:
     JobId Enqueue(const std::string& payload);
@@ -34,4 +34,5 @@ public:
     bool Remove(const JobId& id);
     std::optional<JobId> WaitAndPop();
     void Shutdown();
+    void Finish(JobId const&);
 };

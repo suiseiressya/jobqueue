@@ -33,6 +33,7 @@ add_executable(jobqueue
     src/job_service.cc
     src/http_server.cc
     src/job_id.cc
+    src/thread_pool.cc
 )
 
 target_include_directories(jobqueue PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -58,10 +59,12 @@ add_executable(tests
     tests/job_queue_test.cc
     tests/job_service_test.cc
     tests/http_server_test.cc
+    tests/thread_pool_test.cc
     src/http_server.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_id.cc
+    src/thread_pool.cc
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -81,9 +84,12 @@ catch_discover_tests(tests)
 # TSan build
 add_executable(tests_tsan EXCLUDE_FROM_ALL
     tests/job_service_test.cc
+    tests/thread_pool_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_id.cc
+    src/thread_pool.cc
+    src/http_server.cc
 )
 target_include_directories(tests_tsan PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(tests_tsan PRIVATE -fsanitize=thread -g)
@@ -91,6 +97,7 @@ target_link_options(tests_tsan PRIVATE -fsanitize=thread)
 target_link_libraries(tests_tsan
     PRIVATE
         Catch2::Catch2WithMain
+        httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
         pthread
@@ -99,15 +106,19 @@ target_link_libraries(tests_tsan
 # Helgrind-compatible build (debug symbols, no TSan)
 add_executable(tests_helgrind EXCLUDE_FROM_ALL
     tests/job_service_test.cc
+    tests/thread_pool_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_id.cc
+    src/thread_pool.cc
+    src/http_server.cc
 )
 target_include_directories(tests_helgrind PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_options(tests_helgrind PRIVATE -g -O0)
 target_link_libraries(tests_helgrind
     PRIVATE
         Catch2::Catch2WithMain
+        httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
         pthread
