@@ -52,23 +52,35 @@ Remove a job based on JobId.
 */
 bool JobService::Remove(const JobId& id) {
     std::lock_guard guard(mut_);
+
+    job_queue_.Remove(id);
     return jobs_.erase(id) > 0;
 }
 
 std::optional<JobId> JobService::WaitAndPop() {
     std::unique_lock lock(mut_);
 
-    cv_.wait(lock, [&] {
-        return shutdown_ || job_queue_.Top().has_value();
-    });
+    while (true) {
+        cv_.wait(lock, [&] {
+            return shutdown_ || job_queue_.Top().has_value();
+        });
 
-    if (shutdown_) return {};
+        if (shutdown_) return {};
 
-    JobId job_id = job_queue_.Pop().value();
-    jobs_[job_id].status = kRunning;
-    lock.unlock();
+        JobId job_id = job_queue_.Pop().value();
+        auto it = jobs_.find(job_id);
 
-    return job_id;
+        // if job removed before being picked up: discard the stale job in queue 
+        // and continue waiting instead
+        if (it == jobs_.end()) {
+            job_queue_.Remove(job_id);
+            continue;
+        }
+
+        it->second.status = kRunning;
+        lock.unlock();
+        return job_id;
+    }
 }
 
 void JobService::Shutdown() {

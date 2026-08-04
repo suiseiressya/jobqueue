@@ -86,4 +86,3 @@ latex/
 .ccls-cache/
 *.tar.gz
 *.zip
-tests/thread_pool_test.cc

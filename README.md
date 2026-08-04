@@ -21,13 +21,13 @@ Server starts on `http://localhost:8080`.
 # Unit + integration tests
 ./build/tests
 
-# ThreadSanitizer
-cmake --build build --target tests_tsan
-./build/tests_tsan
-
 # Memcheck (memory leaks)
 valgrind --leak-check=full --error-exitcode=1 ./build/tests_helgrind
 
 # Helgrind (thread errors)
 valgrind --tool=helgrind ./build/tests_helgrind
+
+# ThreadSanitizer
+cmake --build build --target tests_tsan
+./build/tests_tsan
 ```
