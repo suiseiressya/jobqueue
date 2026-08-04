@@ -27,6 +27,18 @@ FetchContent_MakeAvailable(json)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(UUID REQUIRED IMPORTED_TARGET uuid)
 
+# libpqxx (PostgreSQL C++ client). Needs libpq headers: install libpq-devel.
+find_package(PostgreSQL REQUIRED)
+
+set(SKIP_BUILD_TEST ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    libpqxx
+    GIT_REPOSITORY https://github.com/jtv/libpqxx.git
+    GIT_TAG 7.9.2
+)
+FetchContent_MakeAvailable(libpqxx)
+
 add_executable(jobqueue
     src/main.cc
     src/job_queue.cc
@@ -42,6 +54,7 @@ target_link_libraries(jobqueue
         httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
+        libpqxx::pqxx
         pthread
 )
 
@@ -74,6 +87,7 @@ target_link_libraries(tests
         httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
+        libpqxx::pqxx
         pthread
 )
 
@@ -100,6 +114,7 @@ target_link_libraries(tests_tsan
         httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
+        libpqxx::pqxx
         pthread
 )
 
@@ -121,5 +136,6 @@ target_link_libraries(tests_helgrind
         httplib::httplib
         nlohmann_json::nlohmann_json
         PkgConfig::UUID
+        libpqxx::pqxx
         pthread
 )
