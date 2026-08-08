@@ -12,7 +12,7 @@ static Json JobToJson(const Job& job) {
     return {
         {"id", job.id.ToString()},
         {"payload", job.payload},
-        {"status", job.status},
+        {"job_status", job.job_status},
         {"retry_count", job.retry_count},
     };
 }

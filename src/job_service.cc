@@ -77,7 +77,7 @@ std::optional<JobId> JobService::WaitAndPop() {
             continue;
         }
 
-        it->second.status = kRunning;
+        it->second.job_status = kRunning;
         lock.unlock();
         return job_id;
     }
@@ -98,6 +98,6 @@ void JobService::Finish(JobId const& job_id) {
     std::lock_guard guard(mut_);
 
     auto it = jobs_.find(job_id);
-    if (it != jobs_.end()) it->second.status = kDone;
+    if (it != jobs_.end()) it->second.job_status = kDone;
     job_queue_.Remove(job_id);
 }

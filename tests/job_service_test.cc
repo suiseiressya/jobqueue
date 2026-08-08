@@ -14,7 +14,7 @@ TEST_CASE("JobService enqueue creates job with correct state") {
     auto job = svc.Get(id);
     REQUIRE(job.has_value());
     REQUIRE(job->payload == "test-payload");
-    REQUIRE(job->status == kPending);
+    REQUIRE(job->job_status == kPending);
     REQUIRE(job->retry_count == 0);
     REQUIRE(job->id == id);
 }

@@ -1,0 +1,21 @@
+# docker-compose.yml
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: jobqueue
+      POSTGRES_USER: jobqueue
+      POSTGRES_PASSWORD: jobqueue
+    # Host 5433: native postgresql.service already owns 5432.
+    ports: ["5433:5432"]
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobqueue -d jobqueue"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
