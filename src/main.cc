@@ -1,9 +1,24 @@
+#include <iostream>
+#include <optional>
+#include <pqxx/pqxx>
+#include <string>
+
 #include "http_server.h"
 #include "thread_pool.h"
 
-#include <iostream>
-
 int main() {
+    std::optional<pqxx::connection> db;
+    std::string connection_string = "service=jobqueue";
+
+    try {
+        db.emplace(connection_string);
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to connect to Postgres: " << e.what() << "\n";
+        return 1;
+    }
+
+    std::cout << "Connected to Postgres db=" << db->dbname() << " user=" << db->username() << "\n";
+
     JobService job_service;
     HttpServer server(job_service);
     ThreadPool thread_pool(job_service);

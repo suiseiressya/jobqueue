@@ -1,33 +1,41 @@
 # Job Queue
 
-## Build
+Only works on Linux/WSL
+
+## Quick start
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j$(nproc)
+make build      # build
+make start      # rerun without build
+make run        # build + run
+make clean      
+make distclean
 ```
 
-## Run
+## Database setup
+
+Create `~/.pg_service.conf`:
+
+```ini
+[jobqueue]
+host=localhost
+port=5432
+dbname=jobqueue
+user=youruser
+```
+
+Put the password in `~/.pgpass`:
 
 ```bash
-./build/jobqueue
+echo "localhost:5432:jobqueue:youruser:yourpassword" >> ~/.pgpass
+chmod 600 ~/.pgpass
 ```
-
-Server starts on `http://localhost:8080`.
 
 ## Tests
 
 ```bash
-# Unit + integration tests
-./build/tests
-
-# Memcheck (memory leaks)
-valgrind --leak-check=full --error-exitcode=1 ./build/tests_helgrind
-
-# Helgrind (thread errors)
-valgrind --tool=helgrind ./build/tests_helgrind
-
-# ThreadSanitizer
-cmake --build build --target tests_tsan
-./build/tests_tsan
+make test        # unit + integration
+make tsan        # ThreadSanitizer
+make helgrind    # thread errors
+make memcheck    # memory leaks
 ```
