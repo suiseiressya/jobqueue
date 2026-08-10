@@ -10,7 +10,9 @@ using Json = nlohmann::json;
 
 class TestFixture {
 public:
-    JobService job_service_;
+    pqxx::connection conn_{"host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService job_service_{job_repo_};
     HttpServer server_{job_service_};
     std::thread server_thread_;
     httplib::Client client_{"localhost", 9090};

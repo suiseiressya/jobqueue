@@ -9,7 +9,12 @@
 
 int main() {
     std::optional<pqxx::connection> db;
-    std::string connection_string = std::getenv("JOBQUEUE_PG_CONN");
+    const char* connection_env = std::getenv("JOBQUEUE_PG_CONN");
+    if (connection_env == nullptr) {
+        std::cerr << "JOBQUEUE_PG_CONN is not set.\n";
+        return 1;
+    }
+    std::string connection_string = connection_env;
 
     try {
         db.emplace(connection_string);
@@ -22,7 +27,8 @@ int main() {
 
     std::cout << "Connected to Postgres db=" << db->dbname() << " user=" << db->username() << "\n";
 
-    JobService job_service;
+    JobRepository job_repo(*db);
+    JobService job_service(job_repo);
     HttpServer server(job_service);
     ThreadPool thread_pool(job_service);
 

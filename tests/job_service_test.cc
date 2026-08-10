@@ -1,14 +1,17 @@
-#include <catch2/catch_test_macros.hpp>
+#include "job_service.h"
 
+#include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include "job_service.h"
-
 TEST_CASE("JobService enqueue creates job with correct state") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
+
     auto id = svc.Enqueue("test-payload");
 
     auto job = svc.Get(id);
@@ -20,13 +23,19 @@ TEST_CASE("JobService enqueue creates job with correct state") {
 }
 
 TEST_CASE("JobService get returns nullopt for unknown id") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     auto id = JobId::Generate();
     REQUIRE_FALSE(svc.Get(id).has_value());
 }
 
 TEST_CASE("JobService getAll returns all enqueued jobs") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     REQUIRE(svc.GetAll().empty());
 
     svc.Enqueue("a");
@@ -44,7 +53,10 @@ TEST_CASE("JobService getAll returns all enqueued jobs") {
 }
 
 TEST_CASE("JobService remove deletes job") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     auto id = svc.Enqueue("to-delete");
 
     REQUIRE(svc.Remove(id));
@@ -53,12 +65,18 @@ TEST_CASE("JobService remove deletes job") {
 }
 
 TEST_CASE("JobService remove returns false for unknown id") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     REQUIRE_FALSE(svc.Remove(JobId::Generate()));
 }
 
 TEST_CASE("JobService each enqueue generates unique id") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     std::set<std::string> ids;
 
     for (int i = 0; i < 100; i++) {
@@ -72,7 +90,10 @@ TEST_CASE("JobService each enqueue generates unique id") {
 // --- Thread safety tests (for TSan / Helgrind) ---
 
 TEST_CASE("JobService concurrent enqueue") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     constexpr int kNumThreads = 8;
     constexpr int kJobsPerThread = 1000;
 
@@ -82,7 +103,8 @@ TEST_CASE("JobService concurrent enqueue") {
     for (int t = 0; t < kNumThreads; t++) {
         threads.emplace_back([&svc, &results, t] {
             for (int i = 0; i < kJobsPerThread; i++) {
-                results[t].push_back(svc.Enqueue("t" + std::to_string(t) + "-" + std::to_string(i)));
+                results[t].push_back(
+                    svc.Enqueue("t" + std::to_string(t) + "-" + std::to_string(i)));
             }
         });
     }
@@ -98,7 +120,10 @@ TEST_CASE("JobService concurrent enqueue") {
 }
 
 TEST_CASE("JobService concurrent enqueue and get") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     constexpr int kNumOps = 1000;
 
     std::vector<std::thread> threads;
@@ -127,7 +152,10 @@ TEST_CASE("JobService concurrent enqueue and get") {
 }
 
 TEST_CASE("JobService concurrent enqueue and remove") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
     constexpr int kNumJobs = 1000;
 
     std::vector<JobId> ids;

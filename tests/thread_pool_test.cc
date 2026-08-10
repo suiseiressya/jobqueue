@@ -17,7 +17,10 @@ namespace {
 // Same wiring as main.cc: HttpServer and ThreadPool share one JobService.
 class ServerFixture {
 public:
-    JobService job_service_;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService job_service_{job_repo_};
     HttpServer server_{job_service_};
     ThreadPool pool_{job_service_, /*thread_count=*/20};
     std::thread server_thread_;
@@ -79,7 +82,10 @@ TEST_CASE("POST 1000 jobs are all picked up and completed by the worker pool") {
 }
 
 TEST_CASE("Removing a job before it is picked up keeps it deleted") {
-    JobService svc;
+    pqxx::connection conn_{
+        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+    JobRepository job_repo_{conn_};
+    JobService svc{job_repo_};
 
     // Enqueue and remove before any worker exists, so the id is guaranteed
     // to still be sitting in the queue (never popped) when Start() runs.

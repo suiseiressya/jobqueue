@@ -18,10 +18,10 @@ struct Job {
     int retry_count;
 
     Job() {}
-    Job(JobId id, const std::string& payload)
+    Job(JobId id, const std::string& payload, Status job_status = kPending)
         : id(id),
           payload(payload),
-          job_status(kPending),
+          job_status(job_status),
           created_at(std::chrono::system_clock::now()),
           retry_count(0) {}
 };

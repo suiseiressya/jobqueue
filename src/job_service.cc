@@ -1,5 +1,6 @@
 #include "job_service.h"
-#include "job.h"
+
+JobService::JobService(JobRepository const& job_repo) : job_repo_(job_repo) {}
 
 /**
 Creates a new job from payload.
@@ -7,14 +8,17 @@ Creates a new job from payload.
 @return JobId of newly created job
 */
 JobId JobService::Enqueue(const std::string& payload) {
-    std::lock_guard guard(mut_);
-
     JobId job_id = JobId::Generate();
     Job job = Job(job_id, payload);
 
-    jobs_[job_id] = job;
-    job_queue_.Push(job_id);
-    cv_.notify_one();
+    job_repo_.CreateJob(job);
+
+    {
+        std::lock_guard guard(mut_);
+        jobs_[job_id] = job;
+        job_queue_.Push(job_id);
+        cv_.notify_one();
+    }
 
     return job_id;
 }
@@ -79,6 +83,8 @@ std::optional<JobId> JobService::WaitAndPop() {
 
         it->second.job_status = kRunning;
         lock.unlock();
+
+        job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
         return job_id;
     }
 }
@@ -91,13 +97,16 @@ void JobService::Shutdown() {
 }
 
 /**
-Mark a job as done (finished). 
+Mark a job from kRunning to kDone
 Still keep inside jobs_. TODO: decide final behavior
 */
 void JobService::Finish(JobId const& job_id) {
-    std::lock_guard guard(mut_);
+    job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
 
-    auto it = jobs_.find(job_id);
-    if (it != jobs_.end()) it->second.job_status = kDone;
-    job_queue_.Remove(job_id);
+    {
+        std::lock_guard guard(mut_);
+        auto it = jobs_.find(job_id);
+        if (it != jobs_.end()) it->second.job_status = kDone;
+        job_queue_.Remove(job_id);
+    }
 }

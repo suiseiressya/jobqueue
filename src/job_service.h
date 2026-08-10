@@ -5,6 +5,7 @@
 
 #include "job_queue.h"
 #include "job.h"
+#include "job_repository.h"
 
 /**
 JobService class.
@@ -14,6 +15,9 @@ class JobService {
 private:
     /// Underlying job queue
     JobQueue job_queue_;
+
+    /// Repository 
+    JobRepository job_repo_;
 
     /// Current jobs
     std::unordered_map<JobId, Job> jobs_;
@@ -28,6 +32,8 @@ private:
     bool shutdown_ = false;
 
 public:
+    explicit JobService(JobRepository const&);
+
     JobId Enqueue(const std::string& payload);
     std::optional<Job> Get(const JobId& id);
     std::vector<Job> GetAll();

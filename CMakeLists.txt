@@ -42,6 +42,7 @@ FetchContent_MakeAvailable(libpqxx)
 add_executable(jobqueue
     src/main.cc
     src/job_queue.cc
+    src/job_repository.cc
     src/job_service.cc
     src/http_server.cc
     src/job_id.cc
@@ -76,6 +77,7 @@ add_executable(tests
     src/http_server.cc
     src/job_service.cc
     src/job_queue.cc
+    src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
 )
@@ -101,6 +103,7 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     tests/thread_pool_test.cc
     src/job_service.cc
     src/job_queue.cc
+    src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
     src/http_server.cc
@@ -124,6 +127,7 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     tests/thread_pool_test.cc
     src/job_service.cc
     src/job_queue.cc
+    src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
     src/http_server.cc

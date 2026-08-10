@@ -86,3 +86,5 @@ latex/
 .ccls-cache/
 *.tar.gz
 *.zip
+
+jobqueue-plan.md
