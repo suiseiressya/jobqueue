@@ -1,8 +1,16 @@
 # Job Queue
 
-Only works on Linux/WSL
+Only works on Linux/WSL (not tested on Windows)
 
 ## Quick start
+
+Database spinup:
+
+```bash
+docker compose up
+```
+
+Then:
 
 ```bash
 make build      # build
@@ -14,21 +22,17 @@ make distclean
 
 ## Database setup
 
-Create `~/.pg_service.conf`:
-
-```ini
-[jobqueue]
-host=localhost
-port=5432
-dbname=jobqueue
-user=youruser
-```
-
-Put the password in `~/.pgpass`:
-
+DBeaver settings:
 ```bash
-echo "localhost:5432:jobqueue:youruser:yourpassword" >> ~/.pgpass
-chmod 600 ~/.pgpass
+Host: localhost
+Port: 5433
+Database: jobqueue
+
+Authentication: Username/password
+Username: jobqueue
+Password: jobqueue
+
+Or: jdbc:postgresql://localhost:5433/jobqueue
 ```
 
 ## Tests

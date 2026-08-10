@@ -1,5 +1,6 @@
 JOBS := $(shell nproc)
 BUILD_DIR := build
+PG_CONN := host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue
 
 .PHONY: all build run start test tsan helgrind memcheck configure clean distclean
 
@@ -15,12 +16,12 @@ build: configure
 
 ## Build, then start the server on http://localhost:8080
 run: build
-	./$(BUILD_DIR)/jobqueue
+	JOBQUEUE_PG_CONN="$(PG_CONN)" ./$(BUILD_DIR)/jobqueue
 
 ## Start the existing binary without rebuilding
 start:
 	@test -x $(BUILD_DIR)/jobqueue || { echo "No binary at $(BUILD_DIR)/jobqueue - run 'make build' first"; exit 1; }
-	./$(BUILD_DIR)/jobqueue
+	JOBQUEUE_PG_CONN="$(PG_CONN)" ./$(BUILD_DIR)/jobqueue
 
 ## Unit + integration tests
 test: build
