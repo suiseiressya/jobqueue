@@ -10,9 +10,11 @@ Creates a new job from payload.
 JobId JobService::Enqueue(const std::string& payload) {
     JobId job_id = JobId::Generate();
     Job job = Job(job_id, payload);
-
-    job_repo_.CreateJob(job);
-
+    {
+        std::lock_guard guard(repo_mut_);
+        job_repo_.CreateJob(job);
+    }
+    
     {
         std::lock_guard guard(mut_);
         jobs_[job_id] = job;
@@ -83,8 +85,11 @@ std::optional<JobId> JobService::WaitAndPop() {
 
         it->second.job_status = kRunning;
         lock.unlock();
-
-        job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
+        
+        {
+            std::lock_guard guard(repo_mut_);
+            job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
+        }
         return job_id;
     }
 }
@@ -101,7 +106,10 @@ Mark a job from kRunning to kDone
 Still keep inside jobs_. TODO: decide final behavior
 */
 void JobService::Finish(JobId const& job_id) {
-    job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
+    {
+        std::lock_guard guard(repo_mut_);
+        job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
+    }
 
     {
         std::lock_guard guard(mut_);
