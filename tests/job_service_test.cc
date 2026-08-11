@@ -52,7 +52,7 @@ TEST_CASE("JobService getAll returns all enqueued jobs") {
     REQUIRE(payloads.count("c"));
 }
 
-TEST_CASE("JobService remove deletes job") {
+TEST_CASE("JobService remove removes queued job but keeps persisted job") {
     pqxx::connection conn_{
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
@@ -60,8 +60,10 @@ TEST_CASE("JobService remove deletes job") {
     auto id = svc.Enqueue("to-delete");
 
     REQUIRE(svc.Remove(id));
-    REQUIRE_FALSE(svc.GetById(id).has_value());
-    REQUIRE(svc.GetAll().empty());
+    auto job = svc.GetById(id);
+    REQUIRE(job.has_value());
+    REQUIRE(job->job_status == kPending);
+    REQUIRE(svc.GetAll().size() == 1);
 }
 
 TEST_CASE("JobService remove returns false for unknown id") {
@@ -151,7 +153,7 @@ TEST_CASE("JobService concurrent enqueue and get") {
     REQUIRE(svc.GetAll().size() == kNumOps);
 }
 
-TEST_CASE("JobService concurrent enqueue and remove") {
+TEST_CASE("JobService concurrent enqueue and remove preserves persisted jobs") {
     pqxx::connection conn_{
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
@@ -186,5 +188,5 @@ TEST_CASE("JobService concurrent enqueue and remove") {
     for (auto& th : threads) th.join();
 
     auto remaining = svc.GetAll();
-    REQUIRE(remaining.size() == (kNumJobs - 100 + 50));
+    REQUIRE(remaining.size() == (kNumJobs + 50));
 }

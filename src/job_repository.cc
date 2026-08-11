@@ -89,7 +89,7 @@ std::optional<Job> JobRepository::GetById(JobId const& id) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
-        "SELECT id, payload, job_status, retry_count FROM jobs "
+        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count FROM jobs "
         "WHERE id = $1", 
         id.ToString()
     );

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <iostream>
 
-JobService::JobService(JobRepository const& job_repo) : job_repo_(job_repo) {}
+JobService::JobService(JobRepository& job_repo) : job_repo_(job_repo) {}
 
 /**
 Creates a new job from payload.
@@ -30,11 +30,9 @@ Get a job based on its JobId.
 @return std::optional<Job>: empty if no job found, else the Job associated with JobId
 */
 std::optional<Job> JobService::GetById(const JobId& id) {
-    std::lock_guard guard(mut_);
+    auto job = job_repo_.GetById(id);
 
-    auto it = jobs_.find(id);
-    if (it == jobs_.end()) return {};
-    return it->second;
+    return job;
 }
 
 /**
@@ -42,14 +40,9 @@ Get all current jobs.
 @return vector<Job> of all jobs
 */
 std::vector<Job> JobService::GetAll() {
-    std::lock_guard guard(mut_);
+    auto jobs = job_repo_.GetAllJobs();
 
-    std::vector<Job> results;
-    for (const auto& [k, v] : jobs_) {
-        results.push_back(v);
-    }
-
-    return results;
+    return jobs;
 }
 
 /**
@@ -101,7 +94,6 @@ std::optional<JobId> JobService::WaitAndPop() {
         }
 
         it->second.job_status = kRunning;
-        lock.unlock();
         return job_id;
     }
 }

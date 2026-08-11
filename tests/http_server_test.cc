@@ -109,7 +109,7 @@ TEST_CASE("GET /jobs/:id returns 404 for unknown id") {
     REQUIRE(res->status == 404);
 }
 
-TEST_CASE("DELETE /jobs/:id removes job") {
+TEST_CASE("DELETE /jobs/:id removes queued job but preserves persisted job") {
     TestFixture f;
 
     auto create_res = f.client_.Post("/jobs", R"({"payload":"delete-me"})", "application/json");
@@ -121,7 +121,8 @@ TEST_CASE("DELETE /jobs/:id removes job") {
 
     auto get_res = f.client_.Get("/jobs/" + id);
     REQUIRE(get_res);
-    REQUIRE(get_res->status == 404);
+    REQUIRE(get_res->status == 200);
+    REQUIRE(Json::parse(get_res->body)["status"] == kPending);
 }
 
 TEST_CASE("DELETE /jobs/:id returns 404 for unknown id") {

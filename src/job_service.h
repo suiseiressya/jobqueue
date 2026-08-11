@@ -17,7 +17,7 @@ private:
     JobQueue job_queue_;
 
     /// Repository 
-    JobRepository job_repo_;
+    JobRepository& job_repo_;
 
     /// Current jobs
     std::unordered_map<JobId, Job> jobs_;
@@ -32,7 +32,7 @@ private:
     bool shutdown_ = false;
 
 public:
-    explicit JobService(JobRepository const&);
+    explicit JobService(JobRepository&);
 
     JobId Enqueue(const std::string& payload);
     std::optional<Job> GetById(const JobId& id);

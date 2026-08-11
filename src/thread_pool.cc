@@ -1,7 +1,5 @@
 #include "thread_pool.h"
 
-#include <chrono>
-
 void ThreadPool::WorkerLoop() {
     while (!done_) {
         auto id = job_service_.WaitAndPop();
@@ -16,7 +14,6 @@ void ThreadPool::WorkerLoop() {
 // pseudo-execute
 // TODO: Change to real execute
 void ThreadPool::Execute(JobId job_id) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     job_service_.Finish(job_id);
 }
 
