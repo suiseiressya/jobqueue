@@ -10,11 +10,8 @@ Creates a new job from payload.
 JobId JobService::Enqueue(const std::string& payload) {
     JobId job_id = JobId::Generate();
     Job job = Job(job_id, payload);
-    {
-        std::lock_guard guard(repo_mut_);
-        job_repo_.CreateJob(job);
-    }
-    
+    job_repo_.CreateJob(job);
+
     {
         std::lock_guard guard(mut_);
         jobs_[job_id] = job;
@@ -76,7 +73,7 @@ std::optional<JobId> JobService::WaitAndPop() {
         JobId job_id = job_queue_.Pop().value();
         auto it = jobs_.find(job_id);
 
-        // if job removed before being picked up: discard the stale job in queue 
+        // if job removed before being picked up: discard the stale job in queue
         // and continue waiting instead
         if (it == jobs_.end()) {
             job_queue_.Remove(job_id);
@@ -85,11 +82,8 @@ std::optional<JobId> JobService::WaitAndPop() {
 
         it->second.job_status = kRunning;
         lock.unlock();
-        
-        {
-            std::lock_guard guard(repo_mut_);
-            job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
-        }
+
+        job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
         return job_id;
     }
 }
@@ -106,10 +100,7 @@ Mark a job from kRunning to kDone
 Still keep inside jobs_. TODO: decide final behavior
 */
 void JobService::Finish(JobId const& job_id) {
-    {
-        std::lock_guard guard(repo_mut_);
-        job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
-    }
+    job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
 
     {
         std::lock_guard guard(mut_);

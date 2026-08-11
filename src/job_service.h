@@ -25,9 +25,6 @@ private:
     /// Mutex for this job queue
     std::mutex mut_;
 
-    /// Mutex for repository - pqxx connections are not thread safe
-    std::mutex repo_mut_;
-
     /// condition variable
     std::condition_variable cv_;
 

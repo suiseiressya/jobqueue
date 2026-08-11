@@ -3,6 +3,23 @@
 #include <string>
 #include <nlohmann/json.hpp>
 
+namespace {
+    // thread_local: each thread has its own copy 
+    // separate connection string for each thread since pqxx::connection is not thread safe
+    thread_local std::unique_ptr<pqxx::connection> threadconn_ptr;
+} 
+
+/**
+Get connection string for current thread
+If not exist, create new, else reuse
+*/
+pqxx::connection& JobRepository::Connection() {
+    if (!threadconn_ptr) 
+        threadconn_ptr = std::make_unique<pqxx::connection>(connection_string_);
+    
+    return *threadconn_ptr;
+}
+
 std::string const StatusToString(Status status) {
     switch (status) {
         case kPending: return "PENDING";
@@ -31,7 +48,7 @@ Persist a Job in the database.
 Job: Job object 
 */
 void JobRepository::CreateJob(const Job& job) {
-    pqxx::work txn(conn_);
+    pqxx::work txn(Connection());
     txn.exec_params(
         "INSERT INTO jobs (id, payload, job_status, retry_count) "
         "VALUES ($1, $2::jsonb, $3, $4)",
@@ -49,7 +66,7 @@ Update status of a Job based on job_id and from_status.
 Need from_status to prevent stale updating (Job changed status before transaction)
 */
 size_t JobRepository::UpdateJobStatus(JobId const& id, Status from_status, Status to_status) {
-    pqxx::work txn(conn_);
+    pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
         "UPDATE jobs "
@@ -65,8 +82,11 @@ size_t JobRepository::UpdateJobStatus(JobId const& id, Status from_status, Statu
     return result.affected_rows();
 }
 
+/**
+Get a Job by its Id. 
+*/
 std::optional<Job> JobRepository::GetById(JobId const& id) {
-    pqxx::work txn(conn_);
+    pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
         "SELECT id, payload, job_status, retry_count FROM jobs "
@@ -86,8 +106,11 @@ std::optional<Job> JobRepository::GetById(JobId const& id) {
     return job;
 }
 
+/**
+Get all jobs in the db ordered by created_at asc. 
+*/
 std::vector<Job> JobRepository::GetAllJobs() {
-    pqxx::work txn(conn_);
+    pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec(
         "SELECT id, payload #>> '{}' AS payload, job_status, retry_count "

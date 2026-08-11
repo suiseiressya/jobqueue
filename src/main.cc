@@ -1,14 +1,12 @@
+#include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <pqxx/pqxx>
 #include <string>
-#include <cstdlib>
 
 #include "http_server.h"
 #include "thread_pool.h"
 
 int main() {
-    std::optional<pqxx::connection> db;
     const char* connection_env = std::getenv("JOBQUEUE_PG_CONN");
     if (connection_env == nullptr) {
         std::cerr << "JOBQUEUE_PG_CONN is not set.\n";
@@ -17,7 +15,9 @@ int main() {
     std::string connection_string = connection_env;
 
     try {
-        db.emplace(connection_string);
+        pqxx::connection db{connection_string};
+        std::cout << "Connected to Postgres db=" << db.dbname() << " user=" << db.username()
+                  << "\n";
     } catch (const std::exception& e) {
         std::cerr << "Failed to connect to Postgres: " << e.what() << "\n";
         std::cerr << "Tried connection string: " << connection_string << "\n";
@@ -25,9 +25,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "Connected to Postgres db=" << db->dbname() << " user=" << db->username() << "\n";
-
-    JobRepository job_repo(*db);
+    JobRepository job_repo(connection_string);
     JobService job_service(job_repo);
     HttpServer server(job_service);
     ThreadPool thread_pool(job_service);
