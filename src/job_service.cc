@@ -29,7 +29,7 @@ JobId JobService::Enqueue(const std::string& payload) {
 Get a job based on its JobId.
 @return std::optional<Job>: empty if no job found, else the Job associated with JobId
 */
-std::optional<Job> JobService::Get(const JobId& id) {
+std::optional<Job> JobService::GetById(const JobId& id) {
     std::lock_guard guard(mut_);
 
     auto it = jobs_.find(id);

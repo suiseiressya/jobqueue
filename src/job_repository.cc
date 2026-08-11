@@ -1,6 +1,7 @@
 #include "job_repository.h"
 #include <optional>
 #include <string>
+#include <nlohmann/json.hpp>
 
 std::string const StatusToString(Status status) {
     switch (status) {
@@ -36,7 +37,7 @@ void JobRepository::CreateJob(const Job& job) {
         "VALUES ($1, $2::jsonb, $3, $4)",
 
         job.id.ToString(),
-        job.payload,
+        nlohmann::json(job.payload).dump(),
         StatusToString(job.job_status),
         job.retry_count
     );
@@ -89,7 +90,8 @@ std::vector<Job> JobRepository::GetAllJobs() {
     pqxx::work txn(conn_);
 
     pqxx::result result = txn.exec(
-        "SELECT id, payload, job_status, retry_count FROM jobs ORDER BY created_at ASC"
+        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count "
+        "FROM jobs ORDER BY created_at ASC"
     );
 
     std::vector<Job> jobs;

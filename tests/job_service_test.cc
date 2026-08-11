@@ -14,7 +14,7 @@ TEST_CASE("JobService enqueue creates job with correct state") {
 
     auto id = svc.Enqueue("test-payload");
 
-    auto job = svc.Get(id);
+    auto job = svc.GetById(id);
     REQUIRE(job.has_value());
     REQUIRE(job->payload == "test-payload");
     REQUIRE(job->job_status == kPending);
@@ -28,7 +28,7 @@ TEST_CASE("JobService get returns nullopt for unknown id") {
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     auto id = JobId::Generate();
-    REQUIRE_FALSE(svc.Get(id).has_value());
+    REQUIRE_FALSE(svc.GetById(id).has_value());
 }
 
 TEST_CASE("JobService getAll returns all enqueued jobs") {
@@ -60,7 +60,7 @@ TEST_CASE("JobService remove deletes job") {
     auto id = svc.Enqueue("to-delete");
 
     REQUIRE(svc.Remove(id));
-    REQUIRE_FALSE(svc.Get(id).has_value());
+    REQUIRE_FALSE(svc.GetById(id).has_value());
     REQUIRE(svc.GetAll().empty());
 }
 
@@ -142,7 +142,7 @@ TEST_CASE("JobService concurrent enqueue and get") {
 
     threads.emplace_back([&svc] {
         for (int i = 0; i < kNumOps; i++) {
-            svc.Get(JobId::Generate());
+            svc.GetById(JobId::Generate());
         }
     });
 

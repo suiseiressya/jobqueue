@@ -12,7 +12,7 @@ static Json JobToJson(const Job& job) {
     return {
         {"id", job.id.ToString()},
         {"payload", job.payload},
-        {"job_status", job.job_status},
+        {"status", job.job_status},
         {"retry_count", job.retry_count},
     };
 }
@@ -39,7 +39,7 @@ void HttpServer::SetupRoutes() {
         }
 
         auto id = job_service_.Enqueue(body["payload"].get<std::string>());
-        auto job = job_service_.Get(id);
+        auto job = job_service_.GetById(id);
 
         res.status = 201;
         res.set_content(JobToJson(*job).dump(), "application/json");
@@ -65,7 +65,7 @@ void HttpServer::SetupRoutes() {
     @return a JSON object with the job found, or 404 if not found
     */
     server_.Get("/jobs/:id", [this](const Request& req, Response& res) {
-        auto job = job_service_.Get(JobId(req.path_params.at("id")));
+        auto job = job_service_.GetById(JobId(req.path_params.at("id")));
         if (!job) {
             res.status = 404;
             res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");

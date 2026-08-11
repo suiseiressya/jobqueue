@@ -91,7 +91,7 @@ TEST_CASE("Removing a job before it is picked up keeps it deleted") {
     // to still be sitting in the queue (never popped) when Start() runs.
     auto id = svc.Enqueue("to-be-deleted");
     REQUIRE(svc.Remove(id));
-    REQUIRE_FALSE(svc.Get(id).has_value());
+    REQUIRE_FALSE(svc.GetById(id).has_value());
 
     ThreadPool pool(svc, 4);
     pool.Start();
@@ -100,7 +100,7 @@ TEST_CASE("Removing a job before it is picked up keeps it deleted") {
     // it would appear here shortly after the pool drains the queue.
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-    REQUIRE_FALSE(svc.Get(id).has_value());
+    REQUIRE_FALSE(svc.GetById(id).has_value());
 
     pool.Stop();
 }

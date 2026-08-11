@@ -38,7 +38,7 @@ public:
     explicit JobService(JobRepository const&);
 
     JobId Enqueue(const std::string& payload);
-    std::optional<Job> Get(const JobId& id);
+    std::optional<Job> GetById(const JobId& id);
     std::vector<Job> GetAll();
     bool Remove(const JobId& id);
     std::optional<JobId> WaitAndPop();
