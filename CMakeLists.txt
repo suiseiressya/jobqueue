@@ -70,6 +70,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(tests
+    tests/test_database_listener.cc
     tests/job_queue_test.cc
     tests/job_service_test.cc
     tests/http_server_test.cc
@@ -99,6 +100,7 @@ catch_discover_tests(tests)
 
 # TSan build
 add_executable(tests_tsan EXCLUDE_FROM_ALL
+    tests/test_database_listener.cc
     tests/job_service_test.cc
     tests/thread_pool_test.cc
     src/job_service.cc
@@ -123,6 +125,7 @@ target_link_libraries(tests_tsan
 
 # Helgrind-compatible build (debug symbols, no TSan)
 add_executable(tests_helgrind EXCLUDE_FROM_ALL
+    tests/test_database_listener.cc
     tests/job_service_test.cc
     tests/thread_pool_test.cc
     src/job_service.cc

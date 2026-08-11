@@ -18,7 +18,7 @@ namespace {
 class ServerFixture {
 public:
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService job_service_{job_repo_};
     HttpServer server_{job_service_};
@@ -83,7 +83,7 @@ TEST_CASE("POST 1000 jobs are all picked up and completed by the worker pool") {
 
 TEST_CASE("Removing a job before it is picked up keeps it deleted") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
 

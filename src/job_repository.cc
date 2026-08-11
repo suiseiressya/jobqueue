@@ -70,7 +70,7 @@ size_t JobRepository::UpdateJobStatus(JobId const& id, Status from_status, Statu
 
     pqxx::result result = txn.exec_params(
         "UPDATE jobs "
-        "SET job_status = $1 "
+        "SET job_status = $1, updated_at = NOW() "
         "WHERE id = $2 AND job_status = $3", 
 
         StatusToString(to_status), 

@@ -1,5 +1,8 @@
 #include "job_service.h"
 
+#include <cstddef>
+#include <iostream>
+
 JobService::JobService(JobRepository const& job_repo) : job_repo_(job_repo) {}
 
 /**
@@ -79,11 +82,26 @@ std::optional<JobId> JobService::WaitAndPop() {
             job_queue_.Remove(job_id);
             continue;
         }
+        lock.unlock();
+
+        size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
+        // TODO: add re-enqueue logic later (S4)
+        if (affected == 0) {
+            std::cerr << "WaitAndPop failed" << std::endl;
+            lock.lock();
+            job_queue_.Remove(job_id);
+            continue;
+        }
+
+        lock.lock();
+        it = jobs_.find(job_id);
+        if (it == jobs_.end()) {
+            job_queue_.Remove(job_id);
+            continue;
+        }
 
         it->second.job_status = kRunning;
         lock.unlock();
-
-        job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
         return job_id;
     }
 }
@@ -100,12 +118,14 @@ Mark a job from kRunning to kDone
 Still keep inside jobs_. TODO: decide final behavior
 */
 void JobService::Finish(JobId const& job_id) {
-    job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
-
-    {
-        std::lock_guard guard(mut_);
-        auto it = jobs_.find(job_id);
-        if (it != jobs_.end()) it->second.job_status = kDone;
-        job_queue_.Remove(job_id);
+    size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
+    if (affected == 0) {
+        std::cerr << "Finish failed" << std::endl;
+        return;
     }
+
+    std::lock_guard guard(mut_);
+    auto it = jobs_.find(job_id);
+    if (it != jobs_.end()) it->second.job_status = kDone;
+    job_queue_.Remove(job_id);
 }

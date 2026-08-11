@@ -8,7 +8,7 @@
 
 TEST_CASE("JobService enqueue creates job with correct state") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
 
@@ -24,7 +24,7 @@ TEST_CASE("JobService enqueue creates job with correct state") {
 
 TEST_CASE("JobService get returns nullopt for unknown id") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     auto id = JobId::Generate();
@@ -33,7 +33,7 @@ TEST_CASE("JobService get returns nullopt for unknown id") {
 
 TEST_CASE("JobService getAll returns all enqueued jobs") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     REQUIRE(svc.GetAll().empty());
@@ -54,7 +54,7 @@ TEST_CASE("JobService getAll returns all enqueued jobs") {
 
 TEST_CASE("JobService remove deletes job") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     auto id = svc.Enqueue("to-delete");
@@ -66,7 +66,7 @@ TEST_CASE("JobService remove deletes job") {
 
 TEST_CASE("JobService remove returns false for unknown id") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     REQUIRE_FALSE(svc.Remove(JobId::Generate()));
@@ -74,7 +74,7 @@ TEST_CASE("JobService remove returns false for unknown id") {
 
 TEST_CASE("JobService each enqueue generates unique id") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     std::set<std::string> ids;
@@ -91,7 +91,7 @@ TEST_CASE("JobService each enqueue generates unique id") {
 
 TEST_CASE("JobService concurrent enqueue") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     constexpr int kNumThreads = 8;
@@ -121,7 +121,7 @@ TEST_CASE("JobService concurrent enqueue") {
 
 TEST_CASE("JobService concurrent enqueue and get") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     constexpr int kNumOps = 1000;
@@ -153,7 +153,7 @@ TEST_CASE("JobService concurrent enqueue and get") {
 
 TEST_CASE("JobService concurrent enqueue and remove") {
     pqxx::connection conn_{
-        "host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue"};
+        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     constexpr int kNumJobs = 1000;
