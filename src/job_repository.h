@@ -1,3 +1,4 @@
+#include <mutex>
 #include <optional>
 #include <pqxx/pqxx>
 #include <string>
@@ -9,7 +10,12 @@ class JobRepository {
 private:
     std::string connection_string_;
 
-    pqxx::connection& Connection();
+    // separate thread_local pqxx::connection for each thread
+    // use std::optional<> to delay construction 
+    // somehow using this instead of unique_ptr solve helgrind problems? 
+    inline static thread_local std::optional<pqxx::connection> connection_;
+    std::mutex connection_init_mut;
+    pqxx::connection&  Connection();
 
 public:
     explicit JobRepository(std::string connection_string)

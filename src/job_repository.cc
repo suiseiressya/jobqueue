@@ -1,23 +1,27 @@
 #include "job_repository.h"
+#include <langinfo.h>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <nlohmann/json.hpp>
-
-namespace {
-    // thread_local: each thread has its own copy 
-    // separate connection string for each thread since pqxx::connection is not thread safe
-    thread_local std::unique_ptr<pqxx::connection> threadconn_ptr;
-} 
 
 /**
 Get connection string for current thread
 If not exist, create new, else reuse
 */
 pqxx::connection& JobRepository::Connection() {
-    if (!threadconn_ptr) 
-        threadconn_ptr = std::make_unique<pqxx::connection>(connection_string_);
+    if (!connection_) {
+        // mutex to fix pqxx::connection bug
+        // New pqxx::connection is spun up for the first time among multiple threads
+        // which can cause a data race without a lock.
+        // This mutex protects against that behavior, and the impact is minimal:
+        // the mutex will only be used one time when each thread when creating new
+        // pqxx::connection, and just reuse directly without mutex later
+        std::lock_guard lock(connection_init_mut);
+        connection_.emplace(pqxx::connection(connection_string_));
+    }
     
-    return *threadconn_ptr;
+    return connection_.value();
 }
 
 std::string const StatusToString(Status status) {

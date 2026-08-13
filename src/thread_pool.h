@@ -8,7 +8,7 @@ class ThreadPool {
 private:
     std::vector<std::thread> workers_;
     JobService& job_service_;
-    std::atomic_bool done_;
+    std::atomic_bool done_{false};
     size_t num_workers_;
 
     void WorkerLoop();
