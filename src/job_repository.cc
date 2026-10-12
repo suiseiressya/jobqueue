@@ -1,5 +1,4 @@
 #include "job_repository.h"
-#include <langinfo.h>
 #include <mutex>
 #include <optional>
 #include <string>

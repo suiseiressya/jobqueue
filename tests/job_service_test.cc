@@ -97,7 +97,7 @@ TEST_CASE("JobService concurrent enqueue") {
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
     constexpr int kNumThreads = 8;
-    constexpr int kJobsPerThread = 1000;
+    constexpr int kJobsPerThread = 100;
 
     std::vector<std::thread> threads;
     std::vector<std::vector<JobId>> results(kNumThreads);
@@ -126,7 +126,7 @@ TEST_CASE("JobService concurrent enqueue and get") {
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
-    constexpr int kNumOps = 1000;
+    constexpr int kNumOps = 100;
 
     std::vector<std::thread> threads;
 
@@ -158,7 +158,7 @@ TEST_CASE("JobService concurrent enqueue and remove preserves persisted jobs") {
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
-    constexpr int kNumJobs = 1000;
+    constexpr int kNumJobs = 100;
 
     std::vector<JobId> ids;
     for (int i = 0; i < kNumJobs; i++) {

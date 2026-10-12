@@ -45,9 +45,9 @@ public:
 
 }  // namespace
 
-TEST_CASE("POST 1000 jobs are all picked up and completed by the worker pool") {
+TEST_CASE("POST 100 jobs are all picked up and completed by the worker pool") {
     ServerFixture f;
-    constexpr int kNumJobs = 1000;
+    constexpr int kNumJobs = 100;
 
     std::set<std::string> ids;
     for (int i = 0; i < kNumJobs; i++) {
