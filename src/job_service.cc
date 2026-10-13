@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <syncstream>
 
 JobService::JobService(JobRepository& job_repo) : job_repo_(job_repo) {}
 
@@ -80,7 +81,7 @@ std::optional<Job> JobService::WaitAndPop() {
         // Caused by HTTP DELETE, which call CancelPendingJobById which send another call to DB 
         // DB will determine the race result; indeterministic
         if (affected == 0) {
-            std::cerr << "[service] job " << job_id.ToString()
+            std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
                       << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
                       << std::endl;
             lock.lock();
@@ -112,7 +113,7 @@ void JobService::Finish(JobId const& job_id) {
     // If affected = 0, then DB not bugged and job is finished
     // No need to keep the stale job in cache, just delete it
     if (affected == 0)
-        std::cerr << "[service] job " << job_id.ToString()
+        std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
                   << ": RUNNING -> DONE skipped, DB row is no longer RUNNING; dropped from cache"
                   << std::endl;
     job_cache_.erase(job_id);
@@ -126,7 +127,7 @@ void JobService::Fail(JobId const& job_id) {
 
     std::lock_guard guard(mut_);
     if (affected == 0)
-        std::cerr << "[service] job " << job_id.ToString()
+        std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
                   << ": RUNNING -> FAILED skipped, DB row is no longer RUNNING; dropped from cache"
                   << std::endl;
     job_cache_.erase(job_id);

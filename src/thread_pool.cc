@@ -4,6 +4,7 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <syncstream>
 
 using Json = nlohmann::json;
 
@@ -35,7 +36,7 @@ void ThreadPool::WorkerLoop() {
         try {
             Execute(job.value());
         } catch (const std::exception& e) {
-            std::cerr << "[worker] job " << job->id.ToString()
+            std::osyncstream(std::cerr) << "[worker] job " << job->id.ToString()
                       << ": status update threw, row left RUNNING for restart recovery: "
                       << e.what() << std::endl;
         }
@@ -52,7 +53,7 @@ void ThreadPool::Execute(Job const& job) {
     try {
         SimulateWork(job.payload);
     } catch (const std::exception& e) {
-        std::cerr << "[worker] job " << job.id.ToString() << ": work failed, marking FAILED: "
+        std::osyncstream(std::cerr) << "[worker] job " << job.id.ToString() << ": work failed, marking FAILED: "
                   << e.what() << std::endl;
         job_service_.Fail(job.id);
         return;

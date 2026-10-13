@@ -2,6 +2,7 @@
 #include <iostream>
 #include <pqxx/pqxx>
 #include <string>
+#include <syncstream>
 
 #include "http_server.h"
 #include "thread_pool.h"
@@ -9,7 +10,7 @@
 int main() {
     const char* connection_env = std::getenv("JOBQUEUE_PG_CONN");
     if (connection_env == nullptr) {
-        std::cerr << "JOBQUEUE_PG_CONN is not set.\n";
+        std::osyncstream(std::cerr) << "JOBQUEUE_PG_CONN is not set.\n";
         return 1;
     }
     std::string connection_string = connection_env;
@@ -19,9 +20,9 @@ int main() {
         std::cout << "Connected to Postgres db=" << db.dbname() << " user=" << db.username()
                   << "\n";
     } catch (const std::exception& e) {
-        std::cerr << "Failed to connect to Postgres: " << e.what() << "\n";
-        std::cerr << "Tried connection string: " << connection_string << "\n";
-        std::cerr << "Set JOBQUEUE_PG_CONN or configure ~/.pg_service.conf with [jobqueue].\n";
+        std::osyncstream(std::cerr) << "Failed to connect to Postgres: " << e.what() << "\n";
+        std::osyncstream(std::cerr) << "Tried connection string: " << connection_string << "\n";
+        std::osyncstream(std::cerr) << "Set JOBQUEUE_PG_CONN or configure ~/.pg_service.conf with [jobqueue].\n";
         return 1;
     }
 
@@ -35,8 +36,8 @@ int main() {
         std::cout << "Recovered " << n << " jobs" << std::endl;
     }
     catch (std::exception& e) {
-        std::cerr << "Failed to run restart recovery " << e.what() << std::endl;
-        std::cerr << "Stopping job queue" << std::endl;
+        std::osyncstream(std::cerr) << "Failed to run restart recovery " << e.what() << std::endl;
+        std::osyncstream(std::cerr) << "Stopping job queue" << std::endl;
         return 1; 
     }
 
