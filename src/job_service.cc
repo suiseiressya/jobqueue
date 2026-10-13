@@ -55,7 +55,7 @@ bool JobService::Remove(const JobId& id) {
     return jobs_.erase(id) > 0;
 }
 
-std::optional<JobId> JobService::WaitAndPop() {
+std::optional<Job> JobService::WaitAndPop() {
     std::unique_lock lock(mut_);
 
     while (true) {
@@ -85,7 +85,7 @@ std::optional<JobId> JobService::WaitAndPop() {
         lock.lock();
         it = jobs_.find(job_id);
         it->second.job_status = kRunning;
-        return job_id;
+        return it->second;  // copy: caller uses it without holding mut_
     }
 }
 
@@ -98,7 +98,6 @@ void JobService::Shutdown() {
 
 /**
 Mark a job from kRunning to kDone
-Still keep inside jobs_. TODO: decide final behavior
 */
 void JobService::Finish(JobId const& job_id) {
     size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
@@ -110,4 +109,19 @@ void JobService::Finish(JobId const& job_id) {
     std::lock_guard guard(mut_);
     auto it = jobs_.find(job_id);
     if (it != jobs_.end()) it->second.job_status = kDone;
+}
+
+/**
+Mark a job from kRunning to kFailed
+*/
+void JobService::Fail(JobId const& job_id) {
+    size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kFailed);
+    if (affected == 0) {
+        std::cerr << "Fail failed" << std::endl;
+        return;
+    }
+
+    std::lock_guard guard(mut_);
+    auto it = jobs_.find(job_id);
+    if (it != jobs_.end()) it->second.job_status = kFailed;
 }

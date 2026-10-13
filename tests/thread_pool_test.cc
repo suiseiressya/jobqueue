@@ -43,6 +43,19 @@ public:
     }
 };
 
+// Poll the DB until the job reaches DONE or FAILED, bounded by a timeout.
+Status WaitForFinalStatus(JobService& svc, const JobId& id) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        auto job = svc.GetById(id);
+        if (job && (job->job_status == kDone || job->job_status == kFailed)) {
+            return job->job_status;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return svc.GetById(id)->job_status;
+}
+
 }  // namespace
 
 TEST_CASE("POST 100 jobs are all picked up and completed by the worker pool") {
@@ -51,8 +64,9 @@ TEST_CASE("POST 100 jobs are all picked up and completed by the worker pool") {
 
     std::set<std::string> ids;
     for (int i = 0; i < kNumJobs; i++) {
-        auto res = f.client_.Post("/jobs", R"({"payload":"job-)" + std::to_string(i) + R"("})",
-                                   "application/json");
+        // Payload is a JSON string holding the simulated work spec (D-015).
+        std::string body = R"({"payload":"{\"sleep_ms\":)" + std::to_string(i % 5) + R"(}"})";
+        auto res = f.client_.Post("/jobs", body, "application/json");
         REQUIRE(res);
         REQUIRE(res->status == 201);
         ids.insert(Json::parse(res->body)["id"].get<std::string>());
@@ -105,6 +119,53 @@ TEST_CASE("Removing a job before it is picked up keeps persisted job pending") {
     job = svc.GetById(id);
     REQUIRE(job.has_value());
     REQUIRE(job->job_status == kPending);
+
+    pool.Stop();
+}
+
+TEST_CASE("Execute marks job DONE when fake work succeeds") {
+    pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    ThreadPool pool(svc, 2);
+    pool.Start();
+
+    auto id = svc.Enqueue(R"({"sleep_ms":10})");
+    REQUIRE(WaitForFinalStatus(svc, id) == kDone);
+
+    pool.Stop();
+}
+
+TEST_CASE("Execute marks job FAILED when payload requests failure") {
+    pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    ThreadPool pool(svc, 2);
+    pool.Start();
+
+    auto id = svc.Enqueue(R"({"fail":true})");
+    REQUIRE(WaitForFinalStatus(svc, id) == kFailed);
+
+    pool.Stop();
+}
+
+TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
+    pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    // One worker, so the second job proves the same worker survived the first.
+    ThreadPool pool(svc, 1);
+    pool.Start();
+
+    auto bad_json = svc.Enqueue("not json");
+    auto not_object = svc.Enqueue("[1, 2]");
+    auto bad_type = svc.Enqueue(R"({"sleep_ms":"ten"})");
+    auto good = svc.Enqueue("{}");
+
+    REQUIRE(WaitForFinalStatus(svc, bad_json) == kFailed);
+    REQUIRE(WaitForFinalStatus(svc, not_object) == kFailed);
+    REQUIRE(WaitForFinalStatus(svc, bad_type) == kFailed);
+    REQUIRE(WaitForFinalStatus(svc, good) == kDone);
 
     pool.Stop();
 }

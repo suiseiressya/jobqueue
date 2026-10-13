@@ -19,7 +19,8 @@ private:
     /// Repository 
     JobRepository& job_repo_;
 
-    /// Current jobs
+    /// Cache of current jobs 
+    /// Map JobId -> Job
     std::unordered_map<JobId, Job> jobs_;
 
     /// Mutex for this job queue
@@ -38,7 +39,8 @@ public:
     std::optional<Job> GetById(const JobId& id);
     std::vector<Job> GetAll();
     bool Remove(const JobId& id);
-    std::optional<JobId> WaitAndPop();
+    std::optional<Job> WaitAndPop();
     void Shutdown();
     void Finish(JobId const&);
+    void Fail(JobId const&);
 };

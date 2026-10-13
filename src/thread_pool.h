@@ -12,7 +12,7 @@ private:
     size_t num_workers_;
 
     void WorkerLoop();
-    void Execute(JobId);
+    void Execute(Job const&);
 
 public:
     ThreadPool(JobService& service, size_t thread_count = std::thread::hardware_concurrency()): 
