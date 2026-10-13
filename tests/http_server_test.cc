@@ -109,7 +109,7 @@ TEST_CASE("GET /jobs/:id returns 404 for unknown id") {
     REQUIRE(res->status == 404);
 }
 
-TEST_CASE("DELETE /jobs/:id removes queued job but preserves persisted job") {
+TEST_CASE("DELETE /jobs/:id deletes a PENDING job") {
     TestFixture f;
 
     auto create_res = f.client_.Post("/jobs", R"({"payload":"delete-me"})", "application/json");
@@ -121,8 +121,28 @@ TEST_CASE("DELETE /jobs/:id removes queued job but preserves persisted job") {
 
     auto get_res = f.client_.Get("/jobs/" + id);
     REQUIRE(get_res);
-    REQUIRE(get_res->status == 200);
-    REQUIRE(Json::parse(get_res->body)["status"] == kPending);
+    REQUIRE(get_res->status == 404);
+
+    // Deleting again: the row is gone.
+    auto again = f.client_.Delete("/jobs/" + id);
+    REQUIRE(again);
+    REQUIRE(again->status == 404);
+}
+
+TEST_CASE("DELETE /jobs/:id returns 409 for a job that is not PENDING") {
+    TestFixture f;
+
+    auto create_res = f.client_.Post("/jobs", R"({"payload":"{}"})", "application/json");
+    auto id = Json::parse(create_res->body)["id"].get<std::string>();
+    REQUIRE(f.job_service_.WaitAndPop().has_value());  // no pool in this fixture: claim it by hand
+
+    auto res = f.client_.Delete("/jobs/" + id);
+    REQUIRE(res);
+    REQUIRE(res->status == 409);
+
+    auto get_res = f.client_.Get("/jobs/" + id);
+    REQUIRE(get_res);
+    REQUIRE(Json::parse(get_res->body)["status"] == kRunning);
 }
 
 TEST_CASE("DELETE /jobs/:id returns 404 for unknown id") {

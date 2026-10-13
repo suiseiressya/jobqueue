@@ -62,7 +62,7 @@ TEST_CASE("JobService remove removes queued job but keeps persisted job") {
     JobService svc{job_repo_};
     auto id = svc.Enqueue("to-delete");
 
-    REQUIRE(svc.Remove(id));
+    REQUIRE(svc.RemoveFromCache(id));
     auto job = svc.GetById(id);
     REQUIRE(job.has_value());
     REQUIRE(job->job_status == kPending);
@@ -74,7 +74,7 @@ TEST_CASE("JobService remove returns false for unknown id") {
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository job_repo_{conn_};
     JobService svc{job_repo_};
-    REQUIRE_FALSE(svc.Remove(JobId::Generate()));
+    REQUIRE_FALSE(svc.RemoveFromCache(JobId::Generate()));
 }
 
 TEST_CASE("JobService each enqueue generates unique id") {
@@ -178,7 +178,7 @@ TEST_CASE("JobService concurrent enqueue and remove preserves persisted jobs") {
 
     threads.emplace_back([&svc, &ids] {
         for (int i = 0; i < 100; i++) {
-            svc.Remove(ids[i]);
+            svc.RemoveFromCache(ids[i]);
         }
     });
 
@@ -292,4 +292,69 @@ TEST_CASE("RestartRecovery on an empty DB recovers nothing") {
 
     REQUIRE(svc.RestartRecovery() == 0);
     REQUIRE(svc.CacheSize() == 0);
+}
+
+// --- Cancel: DB first, then cache (I-003) ---
+
+TEST_CASE("CancelPendingJobById deletes a queued job from DB and cache") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.CacheSize() == 1);
+
+    REQUIRE(svc.CancelPendingJobById(id));
+    REQUIRE_FALSE(svc.GetById(id).has_value());
+    REQUIRE(svc.CacheSize() == 0);
+}
+
+TEST_CASE("CancelPendingJobById returns false for an unknown id") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    REQUIRE_FALSE(svc.CancelPendingJobById(JobId::Generate()));
+}
+
+TEST_CASE("CancelPendingJobById refuses a RUNNING job and keeps it cached") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.WaitAndPop().has_value());  // now RUNNING
+
+    REQUIRE_FALSE(svc.CancelPendingJobById(id));
+    REQUIRE(test_db::StatusOf(conn, id) == "RUNNING");
+    REQUIRE(svc.CacheSize() == 1);  // worker still owns it
+}
+
+TEST_CASE("WaitAndPop skips a cancelled job left in the queue") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto cancelled = svc.Enqueue("{}");
+    auto kept = svc.Enqueue("{}");
+    REQUIRE(svc.CancelPendingJobById(cancelled));
+
+    // `cancelled` is still at the front of the deque (lazy deletion); it must be skipped.
+    auto job = svc.WaitAndPop();
+    REQUIRE(job.has_value());
+    REQUIRE(job->id == kept);
+}
+
+TEST_CASE("A cancelled job is not brought back by RestartRecovery") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    {
+        JobService before_crash{repo};
+        auto id = before_crash.Enqueue("{}");
+        REQUIRE(before_crash.CancelPendingJobById(id));
+    }
+
+    JobService after_restart{repo};
+    REQUIRE(after_restart.RestartRecovery() == 0);
+    REQUIRE(after_restart.CacheSize() == 0);
 }

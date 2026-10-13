@@ -46,10 +46,10 @@ std::vector<Job> JobService::GetAll() {
 }
 
 /**
-Remove a job based on JobId.
+Remove a job from cache based on JobId.
 @return true if successful, false if not
 */
-bool JobService::Remove(const JobId& id) {
+bool JobService::RemoveFromCache(const JobId& id) {
     std::lock_guard guard(mut_);
 
     return job_cache_.erase(id) > 0;
@@ -68,17 +68,21 @@ std::optional<Job> JobService::WaitAndPop() {
         JobId job_id = job_queue_.Pop().value();
         auto it = job_cache_.find(job_id);
 
-        // if JobService::Remove(job_id) called before the job got popped out of queue 
+        // if HTTP DELETE called and delete the job before it got popped out of queue 
         // then this job is stale 
         // in that case just remove from queue
         if (it == job_cache_.end()) continue;
         lock.unlock();
 
         size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
-        // TODO: add re-enqueue logic later (S4)
+
+        // if affected == 0: row is not PENDING between Pop() and UPDATE 
+        // Caused by HTTP DELETE, which call CancelPendingJobById which send another call to DB 
+        // DB will determine the race result; indeterministic
         if (affected == 0) {
             std::cerr << "[service] job " << job_id.ToString()
-                      << ": PENDING -> RUNNING skipped, DB row is no longer PENDING" << std::endl;
+                      << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
+                      << std::endl;
             lock.lock();
             continue;
         }
@@ -152,4 +156,13 @@ size_t JobService::RestartRecovery() {
 size_t JobService::CacheSize() {
     std::lock_guard guard(mut_);
     return job_cache_.size();
+}
+
+bool JobService::CancelPendingJobById(JobId const& id) {
+    size_t n = job_repo_.CancelPendingJobById(id);
+    if (n == 0) return false;
+    
+    std::lock_guard lock(mut_);
+    job_cache_.erase(id);
+    return true;
 }

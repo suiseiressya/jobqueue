@@ -38,7 +38,7 @@ public:
     JobId Enqueue(const std::string& payload);
     std::optional<Job> GetById(const JobId& id);
     std::vector<Job> GetAll();
-    bool Remove(const JobId& id);
+    bool RemoveFromCache(const JobId& id);
     std::optional<Job> WaitAndPop();
     void Shutdown();
     void Finish(JobId const&);
@@ -47,4 +47,5 @@ public:
 
     /// Number of jobs in the local cache (queued or running). For tests.
     size_t CacheSize();
+    bool CancelPendingJobById(JobId const&);
 };

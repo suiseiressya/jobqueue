@@ -106,7 +106,7 @@ TEST_CASE("Removing a job before it is picked up keeps persisted job pending") {
     // Enqueue and remove before any worker exists, so the id is guaranteed
     // to still be sitting in the queue (never popped) when Start() runs.
     auto id = svc.Enqueue("to-be-deleted");
-    REQUIRE(svc.Remove(id));
+    REQUIRE(svc.RemoveFromCache(id));
     auto job = svc.GetById(id);
     REQUIRE(job.has_value());
     REQUIRE(job->job_status == kPending);
@@ -191,6 +191,61 @@ TEST_CASE("Jobs left RUNNING by a crash are recovered and completed by the pool"
     REQUIRE(WaitForFinalStatus(svc, crashed) == kDone);
     REQUIRE(WaitForFinalStatus(svc, queued) == kDone);
     REQUIRE(test_db::CountWithStatus(conn, "RUNNING") == 0);
+
+    pool.Stop();
+    REQUIRE(svc.CacheSize() == 0);
+}
+
+TEST_CASE("A cancelled job is never executed by the pool") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    // Cancel before any worker exists, so the stale id is guaranteed to be in the queue.
+    auto cancelled = svc.Enqueue("{}");
+    REQUIRE(svc.CancelPendingJobById(cancelled));
+
+    ThreadPool pool(svc, 1);
+    pool.Start();
+
+    // The single worker must pop past the stale id to reach this one.
+    auto sentinel = svc.Enqueue("{}");
+    REQUIRE(WaitForFinalStatus(svc, sentinel) == kDone);
+    REQUIRE_FALSE(svc.GetById(cancelled).has_value());
+
+    pool.Stop();
+}
+
+TEST_CASE("Cancel racing the pool: every job is either deleted or DONE, never stuck") {
+    test_log::ExpectTimingDependentLogs(
+        "\"[service] ... PENDING -> RUNNING skipped\" each time a cancel beats a worker's claim");
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    constexpr int kNumJobs = 100;
+
+    std::vector<JobId> ids;
+    for (int i = 0; i < kNumJobs; i++) ids.push_back(svc.Enqueue("{}"));
+
+    ThreadPool pool(svc, 4);
+    pool.Start();
+
+    // Cancel every job while workers are picking them up. The DB decides each race.
+    std::vector<bool> cancelled(kNumJobs);
+    std::thread canceller([&] {
+        for (int i = 0; i < kNumJobs; i++) cancelled[i] = svc.CancelPendingJobById(ids[i]);
+    });
+    canceller.join();
+
+    for (int i = 0; i < kNumJobs; i++) {
+        if (cancelled[i]) {
+            REQUIRE_FALSE(svc.GetById(ids[i]).has_value());
+        } else {
+            REQUIRE(WaitForFinalStatus(svc, ids[i]) == kDone);
+        }
+    }
+    REQUIRE(test_db::CountWithStatus(conn, "RUNNING") == 0);
+    REQUIRE(test_db::CountWithStatus(conn, "PENDING") == 0);
 
     pool.Stop();
     REQUIRE(svc.CacheSize() == 0);

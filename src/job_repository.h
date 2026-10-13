@@ -31,4 +31,6 @@ public:
 
     size_t ResetRunningToPending();
     std::vector<Job> GetPendingJobOrderByCreatedAt();
+
+    size_t CancelPendingJobById(JobId const&);
 };

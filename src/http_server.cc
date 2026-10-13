@@ -80,10 +80,18 @@ void HttpServer::SetupRoutes() {
     @return 204 if success, 404 if fail
     */
     server_.Delete("/jobs/:id", [this](const Request& req, Response& res) {
-        auto removed = job_service_.Remove(JobId(req.path_params.at("id")));
-        if (!removed) {
-            res.status = 404;
-            res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+        JobId id = JobId(req.path_params.at("id"));
+        auto cancelled = job_service_.CancelPendingJobById(id);
+        if (!cancelled) {
+            auto job = job_service_.GetById(id);
+            if (!job) {
+                res.status = 404;
+                res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+            }
+            else {
+                res.status = 409;
+                res.set_content(Json{{"error", "job is not PENDING"}}.dump(), "application/json");
+            }
             return;
         }
         res.status = 204;

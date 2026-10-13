@@ -50,3 +50,33 @@ TEST_CASE("GetPendingJobOrderByCreatedAt on an empty table returns nothing") {
     JobRepository repo{conn};
     REQUIRE(repo.GetPendingJobOrderByCreatedAt().empty());
 }
+
+// --- CancelPendingJobById: DELETE only while PENDING (I-003) ---
+
+TEST_CASE("CancelPendingJobById delete only PENDING rows") {
+    pqxx::connection conn{test_db::kConn};
+    auto running = test_db::InsertJob(conn, "r", "RUNNING", "1 minute");
+    auto done = test_db::InsertJob(conn, "d", "DONE", "1 minute");
+    auto failed = test_db::InsertJob(conn, "f", "FAILED", "1 minute");
+    auto id = test_db::InsertJob(conn, "p", "PENDING", "1 minute");
+
+    JobRepository repo{conn};
+    REQUIRE(repo.CancelPendingJobById(running) == 0);
+    REQUIRE(repo.CancelPendingJobById(done) == 0);
+    REQUIRE(repo.CancelPendingJobById(failed) == 0);
+    REQUIRE(repo.CancelPendingJobById(id) == 1);
+    REQUIRE_FALSE(repo.GetById(id).has_value());
+
+    REQUIRE(test_db::StatusOf(conn, running) == "RUNNING");
+    REQUIRE(test_db::StatusOf(conn, done) == "DONE");
+    REQUIRE(test_db::StatusOf(conn, failed) == "FAILED");
+
+    // Second cancel finds nothing.
+    REQUIRE(repo.CancelPendingJobById(id) == 0);
+}
+
+TEST_CASE("CancelPendingJobById returns 0 for an unknown id") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    REQUIRE(repo.CancelPendingJobById(JobId::Generate()) == 0);
+}

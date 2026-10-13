@@ -161,3 +161,16 @@ std::vector<Job> JobRepository::GetPendingJobOrderByCreatedAt() {
 
     return jobs;
 }
+
+size_t JobRepository::CancelPendingJobById(JobId const& id) {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec_params(
+        "DELETE FROM jobs "
+        "WHERE id = $1 and job_status = 'PENDING'", 
+        id.ToString()
+    );
+    txn.commit();
+
+    return result.affected_rows();
+}
