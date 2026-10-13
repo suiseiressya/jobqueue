@@ -80,3 +80,54 @@ TEST_CASE("CancelPendingJobById returns 0 for an unknown id") {
     JobRepository repo{conn};
     REQUIRE(repo.CancelPendingJobById(JobId::Generate()) == 0);
 }
+
+// --- started_at / completed_at (migration 002) ---
+
+TEST_CASE("UpdateJobStatus stamps started_at on RUNNING and completed_at on DONE/FAILED") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    auto to_done = test_db::InsertJob(conn, "a", "PENDING", "1 minute");
+    auto to_failed = test_db::InsertJob(conn, "b", "PENDING", "1 minute");
+
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, to_done, "started_at"));
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, to_done, "completed_at"));
+
+    REQUIRE(repo.UpdateJobStatus(to_done, kPending, kRunning) == 1);
+    REQUIRE(test_db::HasTimestamp(conn, to_done, "started_at"));
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, to_done, "completed_at"));
+
+    REQUIRE(repo.UpdateJobStatus(to_done, kRunning, kDone) == 1);
+    REQUIRE(test_db::HasTimestamp(conn, to_done, "started_at"));
+    REQUIRE(test_db::HasTimestamp(conn, to_done, "completed_at"));
+
+    REQUIRE(repo.UpdateJobStatus(to_failed, kPending, kRunning) == 1);
+    REQUIRE(repo.UpdateJobStatus(to_failed, kRunning, kFailed) == 1);
+    REQUIRE(test_db::HasTimestamp(conn, to_failed, "completed_at"));
+
+    pqxx::work txn(conn);
+    auto ordered = txn.exec_params1(
+        "SELECT created_at <= started_at AND started_at <= completed_at FROM jobs WHERE id = $1",
+        to_done.ToString());
+    REQUIRE(ordered[0].as<bool>());
+}
+
+TEST_CASE("UpdateJobStatus with a stale from_status leaves timestamps untouched") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    auto id = test_db::InsertJob(conn, "a", "PENDING", "1 minute");
+
+    REQUIRE(repo.UpdateJobStatus(id, kRunning, kDone) == 0);
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, id, "started_at"));
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, id, "completed_at"));
+}
+
+TEST_CASE("ResetRunningToPending clears started_at") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    auto id = test_db::InsertJob(conn, "a", "PENDING", "1 minute");
+    REQUIRE(repo.UpdateJobStatus(id, kPending, kRunning) == 1);
+    REQUIRE(test_db::HasTimestamp(conn, id, "started_at"));
+
+    REQUIRE(repo.ResetRunningToPending() == 1);
+    REQUIRE_FALSE(test_db::HasTimestamp(conn, id, "started_at"));
+}

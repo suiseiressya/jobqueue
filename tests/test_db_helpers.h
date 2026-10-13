@@ -30,6 +30,14 @@ inline std::string StatusOf(pqxx::connection& conn, const JobId& id) {
     return row[0].as<std::string>();
 }
 
+// True if the timestamp column (started_at / completed_at) of the row is set.
+inline bool HasTimestamp(pqxx::connection& conn, const JobId& id, const std::string& column) {
+    pqxx::work txn(conn);
+    auto row = txn.exec_params1("SELECT " + txn.quote_name(column) + " IS NOT NULL FROM jobs WHERE id = $1",
+                                id.ToString());
+    return row[0].as<bool>();
+}
+
 inline int CountWithStatus(pqxx::connection& conn, const std::string& status) {
     pqxx::work txn(conn);
     auto row = txn.exec_params1("SELECT count(*) FROM jobs WHERE job_status = $1", status);

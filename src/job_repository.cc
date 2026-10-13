@@ -77,13 +77,16 @@ static Job RowToJob(pqxx::row const& row) {
 /**
 Update status of a Job based on job_id and from_status. 
 Need from_status to prevent stale updating (Job changed status before transaction)
+Also stamps started_at on RUNNING and completed_at on DONE/FAILED.
 */
 size_t JobRepository::UpdateJobStatus(JobId const& id, Status from_status, Status to_status) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
         "UPDATE jobs "
-        "SET job_status = $1, updated_at = NOW() "
+        "SET job_status = $1::text, updated_at = NOW(), "
+        "    started_at = CASE WHEN $1::text = 'RUNNING' THEN NOW() ELSE started_at END, "
+        "    completed_at = CASE WHEN $1::text IN ('DONE', 'FAILED') THEN NOW() ELSE completed_at END "
         "WHERE id = $2 AND job_status = $3", 
 
         StatusToString(to_status), 
@@ -139,7 +142,7 @@ size_t JobRepository::ResetRunningToPending() {
 
     pqxx::result result = txn.exec(
         "UPDATE jobs "
-        "SET job_status = 'PENDING', updated_at = NOW() "
+        "SET job_status = 'PENDING', updated_at = NOW(), started_at = NULL "
         "WHERE job_status = 'RUNNING'" 
     );
     txn.commit();
