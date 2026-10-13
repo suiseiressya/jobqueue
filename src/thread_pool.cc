@@ -12,7 +12,7 @@ using Json = nlohmann::json;
  */
 void SimulateWork(const std::string& payload) {
     Json json = Json::parse(payload);
-    if (!json.is_object()) throw std::invalid_argument("not JSON");
+    if (!json.is_object()) throw std::invalid_argument("payload is valid JSON but not an object");
 
     // Sleep to simulate work
     int sleep_ms = json.value("sleep_ms", 0);
@@ -29,11 +29,15 @@ void ThreadPool::WorkerLoop() {
         // shutdown = true
         if (!job.has_value()) return;
 
-        // keep jobs running even if failed, 
+        // only throws if Finish()/Fail() throws. Means that job is still
+        // stuck running in DB
+        // solved with restart recovery
         try {
             Execute(job.value());
         } catch (const std::exception& e) {
-            std::cerr << job->id.ToString() << "failed: " << e.what() << std::endl;
+            std::cerr << "[worker] job " << job->id.ToString()
+                      << ": status update threw, row left RUNNING for restart recovery: "
+                      << e.what() << std::endl;
         }
     }
 }
@@ -48,7 +52,8 @@ void ThreadPool::Execute(Job const& job) {
     try {
         SimulateWork(job.payload);
     } catch (const std::exception& e) {
-        std::cerr << job.id.ToString() << " failed: " << e.what() << std::endl;
+        std::cerr << "[worker] job " << job.id.ToString() << ": work failed, marking FAILED: "
+                  << e.what() << std::endl;
         job_service_.Fail(job.id);
         return;
     }

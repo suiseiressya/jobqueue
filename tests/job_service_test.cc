@@ -1,5 +1,8 @@
 #include "job_service.h"
 
+#include "test_db_helpers.h"
+#include "test_log_helpers.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <string>
@@ -189,4 +192,104 @@ TEST_CASE("JobService concurrent enqueue and remove preserves persisted jobs") {
 
     auto remaining = svc.GetAll();
     REQUIRE(remaining.size() == (kNumJobs + 50));
+}
+
+// --- Cache lifecycle: a job leaves job_cache_ once it ends ---
+
+TEST_CASE("Finish marks job DONE in DB and removes it from the cache") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.CacheSize() == 1);
+
+    auto job = svc.WaitAndPop();
+    REQUIRE(job.has_value());
+    REQUIRE(job->id == id);
+    REQUIRE(svc.CacheSize() == 1);  // running jobs stay cached
+
+    svc.Finish(id);
+    REQUIRE(test_db::StatusOf(conn, id) == "DONE");
+    REQUIRE(svc.CacheSize() == 0);
+}
+
+TEST_CASE("Fail marks job FAILED in DB and removes it from the cache") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.WaitAndPop().has_value());
+
+    svc.Fail(id);
+    REQUIRE(test_db::StatusOf(conn, id) == "FAILED");
+    REQUIRE(svc.CacheSize() == 0);
+}
+
+TEST_CASE("Finish on a row that is no longer RUNNING leaves DB alone but still uncaches") {
+    test_log::ExpectFailureLogs(1);
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.WaitAndPop().has_value());
+
+    // Someone else moved the row on (affected_rows() == 0 path).
+    {
+        pqxx::work txn(conn);
+        txn.exec_params("UPDATE jobs SET job_status = 'FAILED' WHERE id = $1", id.ToString());
+        txn.commit();
+    }
+
+    svc.Finish(id);
+    REQUIRE(test_db::StatusOf(conn, id) == "FAILED");  // conditional update did not overwrite
+    REQUIRE(svc.CacheSize() == 0);
+}
+
+// --- Restart recovery (D-010) ---
+
+TEST_CASE("RestartRecovery resets RUNNING, reloads PENDING in created_at order") {
+    pqxx::connection conn{test_db::kConn};
+    
+    // Write straight into DB without JobService to stage a crash.
+    auto oldest_pending = test_db::InsertJob(conn, "p-oldest", "PENDING", "3 minutes");
+    auto running = test_db::InsertJob(conn, "r-middle", "RUNNING", "2 minutes");
+    auto newest_pending = test_db::InsertJob(conn, "p-newest", "PENDING", "1 minute");
+    auto done = test_db::InsertJob(conn, "done", "DONE", "4 minutes");
+    auto failed = test_db::InsertJob(conn, "failed", "FAILED", "5 minutes");
+
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    REQUIRE(svc.RestartRecovery() == 3);
+    REQUIRE(svc.CacheSize() == 3);
+
+    // DB: no RUNNING left, terminal rows untouched.
+    REQUIRE(test_db::CountWithStatus(conn, "RUNNING") == 0);
+    REQUIRE(test_db::StatusOf(conn, running) == "PENDING");
+    REQUIRE(test_db::StatusOf(conn, done) == "DONE");
+    REQUIRE(test_db::StatusOf(conn, failed) == "FAILED");
+
+    // Queue order follows created_at, regardless of the status the row had before.
+    auto first = svc.WaitAndPop();
+    auto second = svc.WaitAndPop();
+    auto third = svc.WaitAndPop();
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    REQUIRE(third.has_value());
+    REQUIRE(first->id == oldest_pending);
+    REQUIRE(second->id == running);
+    REQUIRE(third->id == newest_pending);
+    REQUIRE(second->payload == "r-middle");
+}
+
+TEST_CASE("RestartRecovery on an empty DB recovers nothing") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+
+    REQUIRE(svc.RestartRecovery() == 0);
+    REQUIRE(svc.CacheSize() == 0);
 }

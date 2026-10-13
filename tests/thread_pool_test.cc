@@ -8,6 +8,8 @@
 #include <thread>
 
 #include "http_server.h"
+#include "test_db_helpers.h"
+#include "test_log_helpers.h"
 #include "thread_pool.h"
 
 using Json = nlohmann::json;
@@ -137,6 +139,7 @@ TEST_CASE("Execute marks job DONE when fake work succeeds") {
 }
 
 TEST_CASE("Execute marks job FAILED when payload requests failure") {
+    test_log::ExpectFailureLogs(1);
     pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository repo{conn};
     JobService svc{repo};
@@ -150,6 +153,7 @@ TEST_CASE("Execute marks job FAILED when payload requests failure") {
 }
 
 TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
+    test_log::ExpectFailureLogs(3);
     pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository repo{conn};
     JobService svc{repo};
@@ -168,4 +172,26 @@ TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
     REQUIRE(WaitForFinalStatus(svc, good) == kDone);
 
     pool.Stop();
+}
+
+TEST_CASE("Jobs left RUNNING by a crash are recovered and completed by the pool") {
+    pqxx::connection conn{test_db::kConn};
+    
+    // Insert 2 Jobs into db to simulate a crash
+    auto crashed = test_db::InsertJob(conn, R"({"sleep_ms":10})", "RUNNING", "1 minute");
+    auto queued = test_db::InsertJob(conn, R"({"sleep_ms":10})", "PENDING", "30 seconds");
+
+    JobRepository repo{conn};
+    JobService svc{repo};
+    REQUIRE(svc.RestartRecovery() == 2);
+
+    ThreadPool pool(svc, 2);
+    pool.Start();
+
+    REQUIRE(WaitForFinalStatus(svc, crashed) == kDone);
+    REQUIRE(WaitForFinalStatus(svc, queued) == kDone);
+    REQUIRE(test_db::CountWithStatus(conn, "RUNNING") == 0);
+
+    pool.Stop();
+    REQUIRE(svc.CacheSize() == 0);
 }

@@ -17,7 +17,7 @@ JobId JobService::Enqueue(const std::string& payload) {
 
     {
         std::lock_guard guard(mut_);
-        jobs_[job_id] = job;
+        job_cache_[job_id] = job;
         job_queue_.Push(job_id);
         cv_.notify_one();
     }
@@ -52,7 +52,7 @@ Remove a job based on JobId.
 bool JobService::Remove(const JobId& id) {
     std::lock_guard guard(mut_);
 
-    return jobs_.erase(id) > 0;
+    return job_cache_.erase(id) > 0;
 }
 
 std::optional<Job> JobService::WaitAndPop() {
@@ -66,24 +66,25 @@ std::optional<Job> JobService::WaitAndPop() {
         if (shutdown_) return {};
 
         JobId job_id = job_queue_.Pop().value();
-        auto it = jobs_.find(job_id);
+        auto it = job_cache_.find(job_id);
 
         // if JobService::Remove(job_id) called before the job got popped out of queue 
         // then this job is stale 
         // in that case just remove from queue
-        if (it == jobs_.end()) continue;
+        if (it == job_cache_.end()) continue;
         lock.unlock();
 
         size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
         // TODO: add re-enqueue logic later (S4)
         if (affected == 0) {
-            std::cerr << "WaitAndPop failed" << std::endl;
+            std::cerr << "[service] job " << job_id.ToString()
+                      << ": PENDING -> RUNNING skipped, DB row is no longer PENDING" << std::endl;
             lock.lock();
             continue;
         }
 
         lock.lock();
-        it = jobs_.find(job_id);
+        it = job_cache_.find(job_id);
         it->second.job_status = kRunning;
         return it->second;  // copy: caller uses it without holding mut_
     }
@@ -97,31 +98,58 @@ void JobService::Shutdown() {
 }
 
 /**
-Mark a job from kRunning to kDone
+Mark a job from kRunning to kDone in DB and remove from cache
 */
 void JobService::Finish(JobId const& job_id) {
     size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
-    if (affected == 0) {
-        std::cerr << "Finish failed" << std::endl;
-        return;
-    }
 
     std::lock_guard guard(mut_);
-    auto it = jobs_.find(job_id);
-    if (it != jobs_.end()) it->second.job_status = kDone;
+
+    // If affected = 0, then DB not bugged and job is finished
+    // No need to keep the stale job in cache, just delete it
+    if (affected == 0)
+        std::cerr << "[service] job " << job_id.ToString()
+                  << ": RUNNING -> DONE skipped, DB row is no longer RUNNING; dropped from cache"
+                  << std::endl;
+    job_cache_.erase(job_id);
 }
 
 /**
-Mark a job from kRunning to kFailed
+Mark a job from kRunning to kFailed in DB and remove from cache
 */
 void JobService::Fail(JobId const& job_id) {
     size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kFailed);
-    if (affected == 0) {
-        std::cerr << "Fail failed" << std::endl;
-        return;
-    }
 
     std::lock_guard guard(mut_);
-    auto it = jobs_.find(job_id);
-    if (it != jobs_.end()) it->second.job_status = kFailed;
+    if (affected == 0)
+        std::cerr << "[service] job " << job_id.ToString()
+                  << ": RUNNING -> FAILED skipped, DB row is no longer RUNNING; dropped from cache"
+                  << std::endl;
+    job_cache_.erase(job_id);
+}
+
+/**
+ * Restart recovery: Resume all stale jobs in DB 
+ * after DB restarts
+ */
+size_t JobService::RestartRecovery() {
+    job_repo_.ResetRunningToPending();
+    std::vector<Job> recovered_jobs = job_repo_.GetPendingJobOrderByCreatedAt();
+
+    std::unique_lock lock(mut_);
+
+    for (auto& job: recovered_jobs) {
+        job_cache_[job.id] = job;
+        job_queue_.Push(job.id);
+    }
+
+    lock.unlock();
+    cv_.notify_all();
+
+    return recovered_jobs.size();
+}
+
+size_t JobService::CacheSize() {
+    std::lock_guard guard(mut_);
+    return job_cache_.size();
 }

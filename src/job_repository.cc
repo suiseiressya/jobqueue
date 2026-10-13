@@ -64,6 +64,16 @@ void JobRepository::CreateJob(const Job& job) {
     txn.commit();
 }
 
+static Job RowToJob(pqxx::row const& row) {
+    Job job;
+    job.id = JobId(row["id"].as<std::string>());
+    job.payload = row["payload"].c_str();
+    job.job_status = StringToStatus(row["job_status"].c_str());
+    job.retry_count = row["retry_count"].as<int>();
+
+    return job;
+}
+
 /**
 Update status of a Job based on job_id and from_status. 
 Need from_status to prevent stale updating (Job changed status before transaction)
@@ -99,14 +109,7 @@ std::optional<Job> JobRepository::GetById(JobId const& id) {
 
     if (result.empty()) return std::nullopt;
 
-    auto row = result[0];
-    Job job;
-    job.id = JobId(row["id"].as<std::string>());
-    job.payload = row["payload"].c_str();
-    job.job_status = StringToStatus(row["job_status"].c_str());
-    job.retry_count = row["retry_count"].as<int>();
-
-    return job;
+    return RowToJob(result[0]);
 }
 
 /**
@@ -121,14 +124,40 @@ std::vector<Job> JobRepository::GetAllJobs() {
     );
 
     std::vector<Job> jobs;
-    for (auto const& row : result) {
-        Job job;
-        job.id = JobId(row["id"].as<std::string>());
-        job.payload = row["payload"].c_str();
-        job.job_status = StringToStatus(row["job_status"].c_str());
-        job.retry_count = row["retry_count"].as<int>();
-        jobs.push_back(job);
-    }
+    for (auto const& row : result) 
+        jobs.push_back(RowToJob(row));
+
+    return jobs;
+}
+
+/**
+ * Restat all stale running job in DB to pending. 
+ * @return number of rows affected
+ */
+size_t JobRepository::ResetRunningToPending() {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec(
+        "UPDATE jobs "
+        "SET job_status = 'PENDING', updated_at = NOW() "
+        "WHERE job_status = 'RUNNING'" 
+    );
+    txn.commit();
+
+    return result.affected_rows();
+}
+
+std::vector<Job> JobRepository::GetPendingJobOrderByCreatedAt() {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec(
+        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count "
+        "FROM jobs WHERE job_status = 'PENDING' ORDER BY created_at ASC"
+    );
+
+    std::vector<Job> jobs;
+    for (auto const& row : result) 
+        jobs.push_back(RowToJob(row));
 
     return jobs;
 }

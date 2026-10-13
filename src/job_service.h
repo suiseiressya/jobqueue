@@ -21,7 +21,7 @@ private:
 
     /// Cache of current jobs 
     /// Map JobId -> Job
-    std::unordered_map<JobId, Job> jobs_;
+    std::unordered_map<JobId, Job> job_cache_;
 
     /// Mutex for this job queue
     std::mutex mut_;
@@ -43,4 +43,8 @@ public:
     void Shutdown();
     void Finish(JobId const&);
     void Fail(JobId const&);
+    size_t RestartRecovery();
+
+    /// Number of jobs in the local cache (queued or running). For tests.
+    size_t CacheSize();
 };

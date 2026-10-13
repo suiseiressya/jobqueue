@@ -30,6 +30,16 @@ int main() {
     HttpServer server(job_service);
     ThreadPool thread_pool(job_service);
 
+    try {
+        size_t n = job_service.RestartRecovery();
+        std::cout << "Recovered " << n << " jobs" << std::endl;
+    }
+    catch (std::exception& e) {
+        std::cerr << "Failed to run restart recovery " << e.what() << std::endl;
+        std::cerr << "Stopping job queue" << std::endl;
+        return 1; 
+    }
+
     thread_pool.Start();
 
     std::cout << "Server listening on http://localhost:8080\n";

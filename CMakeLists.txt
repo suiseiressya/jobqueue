@@ -73,6 +73,7 @@ add_executable(tests
     tests/test_database_listener.cc
     tests/job_queue_test.cc
     tests/job_service_test.cc
+    tests/job_repository_test.cc
     tests/http_server_test.cc
     tests/thread_pool_test.cc
     src/http_server.cc

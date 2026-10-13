@@ -30,5 +30,5 @@ public:
     std::vector<Job> GetAllJobs();
 
     size_t ResetRunningToPending();
-    std::vector<Job> GetPendingJobOrderByLastUpdate();
+    std::vector<Job> GetPendingJobOrderByCreatedAt();
 };
