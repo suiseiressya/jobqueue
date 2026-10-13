@@ -8,7 +8,6 @@ TEST_CASE("JobQueue push and pop") {
 
     q.Push(id);
     REQUIRE(q.Size() == 1);
-    REQUIRE(q.Contains(id));
 
     auto popped = q.Pop();
     REQUIRE(popped.has_value());
@@ -50,38 +49,13 @@ TEST_CASE("JobQueue FIFO ordering") {
     REQUIRE(*q.Pop() == id3);
 }
 
-TEST_CASE("JobQueue push ignores duplicates") {
+TEST_CASE("JobQueue push keep duplicates. Duplicate is handled by JobService") {
     JobQueue q;
     auto id = JobId::Generate();
 
     q.Push(id);
     q.Push(id);
-    REQUIRE(q.Size() == 1);
-}
-
-TEST_CASE("JobQueue remove clears from active set") {
-    JobQueue q;
-    auto id = JobId::Generate();
-
-    q.Push(id);
-    REQUIRE(q.Contains(id));
-
-    q.Remove(id);
-    REQUIRE_FALSE(q.Contains(id));
-}
-
-TEST_CASE("JobQueue remove allows re-push") {
-    JobQueue q;
-    auto id = JobId::Generate();
-
-    q.Push(id);
-    q.Pop();
-    q.Remove(id);
-
-    q.Push(id);
-    REQUIRE(q.Size() == 1);
-    REQUIRE(q.Contains(id));
-    REQUIRE(*q.Pop() == id);
+    REQUIRE(q.Size() == 2);
 }
 
 TEST_CASE("JobQueue mixed operations") {

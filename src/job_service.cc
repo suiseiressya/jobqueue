@@ -52,7 +52,6 @@ Remove a job based on JobId.
 bool JobService::Remove(const JobId& id) {
     std::lock_guard guard(mut_);
 
-    job_queue_.Remove(id);
     return jobs_.erase(id) > 0;
 }
 
@@ -69,12 +68,10 @@ std::optional<JobId> JobService::WaitAndPop() {
         JobId job_id = job_queue_.Pop().value();
         auto it = jobs_.find(job_id);
 
-        // if job removed before being picked up: discard the stale job in queue
-        // and continue waiting instead
-        if (it == jobs_.end()) {
-            job_queue_.Remove(job_id);
-            continue;
-        }
+        // if JobService::Remove(job_id) called before the job got popped out of queue 
+        // then this job is stale 
+        // in that case just remove from queue
+        if (it == jobs_.end()) continue;
         lock.unlock();
 
         size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
@@ -82,17 +79,11 @@ std::optional<JobId> JobService::WaitAndPop() {
         if (affected == 0) {
             std::cerr << "WaitAndPop failed" << std::endl;
             lock.lock();
-            job_queue_.Remove(job_id);
             continue;
         }
 
         lock.lock();
         it = jobs_.find(job_id);
-        if (it == jobs_.end()) {
-            job_queue_.Remove(job_id);
-            continue;
-        }
-
         it->second.job_status = kRunning;
         return job_id;
     }
@@ -119,5 +110,4 @@ void JobService::Finish(JobId const& job_id) {
     std::lock_guard guard(mut_);
     auto it = jobs_.find(job_id);
     if (it != jobs_.end()) it->second.job_status = kDone;
-    job_queue_.Remove(job_id);
 }

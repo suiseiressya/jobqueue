@@ -2,7 +2,7 @@ JOBS := $(shell nproc)
 BUILD_DIR := build
 PG_CONN := host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue
 
-.PHONY: all build run start test tsan helgrind memcheck configure clean distclean
+.PHONY: all build run start test tsan helgrind memcheck configure clean distclean migrate
 
 all: build
 
@@ -22,6 +22,19 @@ run: build
 start:
 	@test -x $(BUILD_DIR)/jobqueue || { echo "No binary at $(BUILD_DIR)/jobqueue - run 'make build' first"; exit 1; }
 	JOBQUEUE_PG_CONN="$(PG_CONN)" ./$(BUILD_DIR)/jobqueue
+
+## Create the test DB if missing and apply migrations/*.sql to jobqueue and test.
+## Works on existing volumes (initdb.d only runs on a fresh one). Migrations must be idempotent.
+migrate:
+	docker compose exec -T db psql -U jobqueue -d postgres -tAc \
+		"SELECT 1 FROM pg_database WHERE datname = 'test'" | grep -q 1 || \
+		docker compose exec -T db psql -U jobqueue -d postgres -c "CREATE DATABASE test"
+	for db in jobqueue test; do \
+		for f in migrations/*.sql; do \
+			echo "$$db <- $$f"; \
+			docker compose exec -T db psql -U jobqueue -d $$db -v ON_ERROR_STOP=1 -q < $$f || exit 1; \
+		done; \
+	done
 
 ## Unit + integration tests
 test: build
