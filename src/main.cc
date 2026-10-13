@@ -1,13 +1,26 @@
+#include <signal.h>
+#include <unistd.h>
+
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <pqxx/pqxx>
 #include <string>
 #include <syncstream>
+#include <thread>
 
 #include "http_server.h"
 #include "thread_pool.h"
 
 int main() {
+    // Block SIGINT/SIGTERM before any thread starts so every thread inherits
+    // the mask and only the sigwait thread below receives them 
+    sigset_t shutdown_signals;
+    sigemptyset(&shutdown_signals);
+    sigaddset(&shutdown_signals, SIGINT);
+    sigaddset(&shutdown_signals, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &shutdown_signals, nullptr);
+
     const char* connection_env = std::getenv("JOBQUEUE_PG_CONN");
     if (connection_env == nullptr) {
         std::osyncstream(std::cerr) << "JOBQUEUE_PG_CONN is not set.\n";
@@ -43,8 +56,28 @@ int main() {
 
     thread_pool.Start();
 
-    std::cout << "Server listening on http://localhost:8080\n";
-    server.Listen("0.0.0.0", 8080);  // blocks until server.Stop() is called
+    // httplib's stop() is a no-op before listen() is running, so a signal that
+    // lands too early is lost. Keep waiting: the next signal stops the server.
+    std::atomic_bool listen_returned{false};
+    std::thread signal_thread([&] {
+        int sig = 0;
+        while (sigwait(&shutdown_signals, &sig) == 0 && !listen_returned) {
+            std::osyncstream(std::cerr) << "Received signal " << sig << ", shutting down\n";
+            server.Stop();
+        }
+    });
 
+    std::cout << "Server listening on http://localhost:8080" << std::endl;
+    bool listened = server.Listen("0.0.0.0", 8080);  // blocks until server.Stop() is called
+    if (!listened) std::osyncstream(std::cerr) << "Failed to listen on port 8080\n";
+
+    // Wake the signal thread if Listen returned on its own (e.g. bind failure).
+    listen_returned = true;
+    kill(getpid(), SIGTERM);
+    signal_thread.join();
+
+    // In-flight jobs finish; PENDING jobs stay in the DB for the next start.
     thread_pool.Stop();
+    std::cout << "Stopped cleanly\n";
+    return listened ? 0 : 1;
 }

@@ -98,8 +98,8 @@ void HttpServer::SetupRoutes() {
     });
 }
 
-void HttpServer::Listen(const std::string& host, int port) {
-    server_.listen(host, port);
+bool HttpServer::Listen(const std::string& host, int port) {
+    return server_.listen(host, port);
 }
 
 void HttpServer::Stop() {

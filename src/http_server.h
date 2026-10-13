@@ -18,6 +18,6 @@ private:
 
 public:
     explicit HttpServer(JobService& job_service);
-    void Listen(const std::string& host, int port);
+    bool Listen(const std::string& host, int port);
     void Stop();
 };
