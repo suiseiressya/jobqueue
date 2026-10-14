@@ -38,7 +38,6 @@ public:
     JobId Enqueue(const std::string& payload);
     std::optional<Job> GetById(const JobId& id);
     std::vector<Job> GetAll();
-    bool RemoveFromCache(const JobId& id);
     std::optional<Job> WaitAndPop();
     void Shutdown();
     void Finish(JobId const&);

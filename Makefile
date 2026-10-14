@@ -2,7 +2,7 @@ JOBS := $(shell nproc)
 BUILD_DIR := build
 PG_CONN := host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue
 
-.PHONY: all build run start test tsan helgrind memcheck configure clean distclean migrate
+.PHONY: all build run start test tsan helgrind memcheck configure clean distclean migrate crash
 
 all: build
 
@@ -35,6 +35,10 @@ migrate:
 			docker compose exec -T db psql -U jobqueue -d $$db -v ON_ERROR_STOP=1 -q < $$f || exit 1; \
 		done; \
 	done
+
+## End-to-end crash checks against the test DB (restarts the Postgres container; see the script header)
+crash: build
+	scripts/crash_checks.sh
 
 ## Unit + integration tests
 test: build

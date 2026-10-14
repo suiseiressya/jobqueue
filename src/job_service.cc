@@ -46,16 +46,6 @@ std::vector<Job> JobService::GetAll() {
     return jobs;
 }
 
-/**
-Remove a job from cache based on JobId.
-@return true if successful, false if not
-*/
-bool JobService::RemoveFromCache(const JobId& id) {
-    std::lock_guard guard(mut_);
-
-    return job_cache_.erase(id) > 0;
-}
-
 std::optional<Job> JobService::WaitAndPop() {
     std::unique_lock lock(mut_);
 

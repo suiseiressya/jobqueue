@@ -97,34 +97,6 @@ TEST_CASE("POST 100 jobs are all picked up and completed by the worker pool") {
     REQUIRE(done_count == kNumJobs);
 }
 
-TEST_CASE("Removing a job before it is picked up keeps persisted job pending") {
-    pqxx::connection conn_{
-        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
-    JobRepository job_repo_{conn_};
-    JobService svc{job_repo_};
-
-    // Enqueue and remove before any worker exists, so the id is guaranteed
-    // to still be sitting in the queue (never popped) when Start() runs.
-    auto id = svc.Enqueue("to-be-deleted");
-    REQUIRE(svc.RemoveFromCache(id));
-    auto job = svc.GetById(id);
-    REQUIRE(job.has_value());
-    REQUIRE(job->job_status == kPending);
-
-    ThreadPool pool(svc, 4);
-    pool.Start();
-
-    // Removal drops this id from queue/cache. DB-backed reads must still show
-    // persisted job, but worker pool must not change its status.
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-
-    job = svc.GetById(id);
-    REQUIRE(job.has_value());
-    REQUIRE(job->job_status == kPending);
-
-    pool.Stop();
-}
-
 TEST_CASE("Execute marks job DONE when fake work succeeds") {
     pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository repo{conn};

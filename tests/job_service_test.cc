@@ -55,28 +55,6 @@ TEST_CASE("JobService getAll returns all enqueued jobs") {
     REQUIRE(payloads.count("c"));
 }
 
-TEST_CASE("JobService remove removes queued job but keeps persisted job") {
-    pqxx::connection conn_{
-        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
-    JobRepository job_repo_{conn_};
-    JobService svc{job_repo_};
-    auto id = svc.Enqueue("to-delete");
-
-    REQUIRE(svc.RemoveFromCache(id));
-    auto job = svc.GetById(id);
-    REQUIRE(job.has_value());
-    REQUIRE(job->job_status == kPending);
-    REQUIRE(svc.GetAll().size() == 1);
-}
-
-TEST_CASE("JobService remove returns false for unknown id") {
-    pqxx::connection conn_{
-        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
-    JobRepository job_repo_{conn_};
-    JobService svc{job_repo_};
-    REQUIRE_FALSE(svc.RemoveFromCache(JobId::Generate()));
-}
-
 TEST_CASE("JobService each enqueue generates unique id") {
     pqxx::connection conn_{
         "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
@@ -154,44 +132,6 @@ TEST_CASE("JobService concurrent enqueue and get") {
     for (auto& th : threads) th.join();
 
     REQUIRE(svc.GetAll().size() == kNumOps);
-}
-
-TEST_CASE("JobService concurrent enqueue and remove preserves persisted jobs") {
-    pqxx::connection conn_{
-        "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
-    JobRepository job_repo_{conn_};
-    JobService svc{job_repo_};
-    constexpr int kNumJobs = 100;
-
-    std::vector<JobId> ids;
-    for (int i = 0; i < kNumJobs; i++) {
-        ids.push_back(svc.Enqueue("job-" + std::to_string(i)));
-    }
-
-    std::vector<std::thread> threads;
-
-    threads.emplace_back([&svc] {
-        for (int i = 0; i < 50; i++) {
-            svc.Enqueue("extra-" + std::to_string(i));
-        }
-    });
-
-    threads.emplace_back([&svc, &ids] {
-        for (int i = 0; i < 100; i++) {
-            svc.RemoveFromCache(ids[i]);
-        }
-    });
-
-    threads.emplace_back([&svc] {
-        for (int i = 0; i < 100; i++) {
-            svc.GetAll();
-        }
-    });
-
-    for (auto& th : threads) th.join();
-
-    auto remaining = svc.GetAll();
-    REQUIRE(remaining.size() == (kNumJobs + 50));
 }
 
 // --- Cache lifecycle: a job leaves job_cache_ once it ends ---
