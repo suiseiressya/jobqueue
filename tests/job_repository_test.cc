@@ -131,3 +131,24 @@ TEST_CASE("ResetRunningToPending clears started_at") {
     REQUIRE(repo.ResetRunningToPending() == 1);
     REQUIRE_FALSE(test_db::HasTimestamp(conn, id, "started_at"));
 }
+
+// --- Connection(): reconnect after the server drops the connection (I-007) ---
+
+TEST_CASE("Repository reconnects on the call after its connection was killed") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    auto id = test_db::InsertJob(conn, "a", "PENDING", "1 minute");
+    REQUIRE(repo.GetById(id).has_value());  // opens this thread's repository connection
+
+    // Same effect on the repository's connection as a Postgres restart: the server
+    // side goes away. Kills every other backend on `test` (tests run one at a time).
+    test_db::KillOtherConnections(conn);
+
+    // libpq notices only when a query fails: this call throws...
+    REQUIRE_THROWS(repo.GetById(id));
+    // ...and the next one opens a new connection and works.
+    auto job = repo.GetById(id);
+    REQUIRE(job.has_value());
+    REQUIRE(job->payload == "a");
+    REQUIRE(repo.UpdateJobStatus(id, kPending, kRunning) == 1);
+}

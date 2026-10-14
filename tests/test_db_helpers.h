@@ -1,6 +1,9 @@
 #pragma once
+#include <chrono>
 #include <pqxx/pqxx>
+#include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "job_id.h"
 
@@ -42,6 +45,23 @@ inline int CountWithStatus(pqxx::connection& conn, const std::string& status) {
     pqxx::work txn(conn);
     auto row = txn.exec_params1("SELECT count(*) FROM jobs WHERE job_status = $1", status);
     return row[0].as<int>();
+}
+
+// Terminate every other backend connected to this DB and wait until they are gone.
+// pg_terminate_backend only sends the signal, so poll pg_stat_activity.
+inline void KillOtherConnections(pqxx::connection& conn) {
+    pqxx::nontransaction txn(conn);
+    txn.exec(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND pid <> pg_backend_pid()");
+    for (int i = 0; i < 100; i++) {
+        auto row = txn.exec1(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND pid <> pg_backend_pid()");
+        if (row[0].as<int>() == 0) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    throw std::runtime_error("other connections did not terminate");
 }
 
 }  // namespace test_db

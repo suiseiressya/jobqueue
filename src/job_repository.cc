@@ -7,9 +7,13 @@
 /**
 Get connection string for current thread
 If not exist, create new, else reuse
+If broken (e.g Postgres restart/dead), replace connection 
+with new one 
 */
 pqxx::connection& JobRepository::Connection() {
-    if (!connection_) {
+    // is_open: checking if connection is currently open 
+    // if DB restarts, is_open will be wrong and require a reset()
+    if (!connection_ || !connection_->is_open()) {
         // mutex to fix pqxx::connection bug
         // New pqxx::connection is spun up for the first time among multiple threads
         // which can cause a data race without a lock.
@@ -17,6 +21,8 @@ pqxx::connection& JobRepository::Connection() {
         // the mutex will only be used one time when each thread when creating new
         // pqxx::connection, and just reuse directly without mutex later
         std::lock_guard lock(connection_init_mut);
+
+        connection_.reset();
         connection_.emplace(pqxx::connection(connection_string_));
     }
     
