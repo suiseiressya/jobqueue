@@ -65,17 +65,29 @@ std::optional<Job> JobService::WaitAndPop() {
         if (it == job_cache_.end()) continue;
         lock.unlock();
 
-        size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
+        try {
+            size_t affected = job_repo_.UpdateJobStatus(job_id, kPending, kRunning);
 
-        // if affected == 0: row is not PENDING between Pop() and UPDATE 
-        // Caused by HTTP DELETE, which call CancelPendingJobById which send another call to DB 
-        // DB will determine the race result; indeterministic
-        if (affected == 0) {
+            // if affected == 0: row is not PENDING between Pop() and UPDATE 
+            // Caused by HTTP DELETE, which call CancelPendingJobById which send another call to DB 
+            // DB will determine the race result; indeterministic
+            if (affected == 0) {
+                std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
+                        << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
+                        << std::endl;
+                lock.lock();
+                continue;
+            }
+        } catch (std::exception const& e) {
+            // if UpdateJobStatus stale (e.g. DB resets mid-call), job stays in cache but not
+            // updated DB side mismatch: just drop from cache
             std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
-                      << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
-                      << std::endl;
+                        << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
+                        << std::endl;
+
             lock.lock();
-            continue;
+            job_cache_.erase(job_id);
+            throw;
         }
 
         lock.lock();
@@ -96,7 +108,15 @@ void JobService::Shutdown() {
 Mark a job from kRunning to kDone in DB and remove from cache
 */
 void JobService::Finish(JobId const& job_id) {
-    size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
+    size_t affected = 0;
+    bool failed = 0;
+    try {
+        affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
+    } catch (...) {
+        std::lock_guard guard(mut_);
+        job_cache_.erase(job_id);
+        throw;
+    }
 
     std::lock_guard guard(mut_);
 
@@ -113,7 +133,15 @@ void JobService::Finish(JobId const& job_id) {
 Mark a job from kRunning to kFailed in DB and remove from cache
 */
 void JobService::Fail(JobId const& job_id) {
-    size_t affected = job_repo_.UpdateJobStatus(job_id, kRunning, kFailed);
+    size_t affected = 0;
+
+    try {
+        affected = job_repo_.UpdateJobStatus(job_id, kRunning, kFailed);
+    } catch (...) {
+        std::lock_guard guard(mut_);
+        job_cache_.erase(job_id);
+        throw;
+    }
 
     std::lock_guard guard(mut_);
     if (affected == 0)

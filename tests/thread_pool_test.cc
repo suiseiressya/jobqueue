@@ -222,3 +222,32 @@ TEST_CASE("Cancel racing the pool: every job is either deleted or DONE, never st
     pool.Stop();
     REQUIRE(svc.CacheSize() == 0);
 }
+
+// I-007. Without a catch around WaitAndPop in WorkerLoop, the claim's exception reaches
+// std::terminate: Catch2 reports SIGABRT and the rest of the run is skipped.
+TEST_CASE("A worker survives a claim that throws and keeps processing jobs") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    ThreadPool pool(svc, 1);
+    pool.Start();
+
+    auto warm = svc.Enqueue("{}");  // the worker thread opens its connection
+    auto warm_status = WaitForFinalStatus(svc, warm);
+
+    test_log::ExpectFailureLogs(1);  // the failed claim
+    test_db::KillOtherConnections(conn);
+    REQUIRE_THROWS(svc.GetById(warm));  // this thread's connection died too; now reconnected
+
+    auto stranded = svc.Enqueue("{}");  // the worker's claim of this one throws
+    auto next = svc.Enqueue("{}");      // the same worker must reconnect and run this one
+    auto next_status = WaitForFinalStatus(svc, next);
+    // Stop before the REQUIREs: a failed REQUIRE with workers running aborts the run.
+    pool.Stop();
+
+    REQUIRE(warm_status == kDone);
+    REQUIRE(next_status == kDone);
+    // Not claimed: still PENDING, and nothing re-queues it until the S4 scheduler.
+    REQUIRE(test_db::StatusOf(conn, stranded) == "PENDING");
+    REQUIRE(svc.CacheSize() == 0);
+}

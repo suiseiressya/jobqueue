@@ -25,8 +25,11 @@ void SimulateWork(const std::string& payload) {
 
 void ThreadPool::WorkerLoop() {
     while (!done_) {
-        auto job = job_service_.WaitAndPop();
-
+        std::optional<Job> job;
+        try {
+            job = job_service_.WaitAndPop();
+        } catch (std::exception const& e) { continue; }
+        
         // shutdown = true
         if (!job.has_value()) return;
 

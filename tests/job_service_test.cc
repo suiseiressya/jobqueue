@@ -298,3 +298,41 @@ TEST_CASE("A cancelled job is not brought back by RestartRecovery") {
     REQUIRE(after_restart.RestartRecovery() == 0);
     REQUIRE(after_restart.CacheSize() == 0);
 }
+
+// --- DB connection dies under a call (I-007) ---
+// KillOtherConnections does to this thread's repository connection what a Postgres restart
+// does: the next DB call throws, the call after that reconnects (D-007).
+
+TEST_CASE("WaitAndPop: a claim that throws drops the job from the cache and leaves the row PENDING") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    auto stranded = svc.Enqueue("{}");  // opens this thread's repository connection
+    test_db::KillOtherConnections(conn);
+
+    REQUIRE_THROWS(svc.WaitAndPop());
+
+    // The claim never happened: the row is still PENDING. The cache entry must go, or the
+    // S4 scheduler's dedup check would skip this row forever.
+    REQUIRE(test_db::StatusOf(conn, stranded) == "PENDING");
+    REQUIRE(svc.CacheSize() == 0);
+
+    // The service keeps working on a new connection.
+    auto next = svc.Enqueue("{}");
+    auto job = svc.WaitAndPop();
+    REQUIRE(job.has_value());
+    REQUIRE(job->id == next);
+}
+
+TEST_CASE("Finish that throws drops the job from the cache") {
+    pqxx::connection conn{test_db::kConn};
+    JobRepository repo{conn};
+    JobService svc{repo};
+    auto id = svc.Enqueue("{}");
+    REQUIRE(svc.WaitAndPop().has_value());  // RUNNING, cached
+    test_db::KillOtherConnections(conn);    // work done, DB gone before Finish
+
+    REQUIRE_THROWS(svc.Finish(id));
+    // No worker owns the job any more: an entry left behind leaks until restart.
+    REQUIRE(svc.CacheSize() == 0);
+}
