@@ -9,7 +9,7 @@ public:
         pqxx::connection connection{
             "host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
         pqxx::work transaction{connection};
-        transaction.exec("TRUNCATE TABLE jobs");
+        transaction.exec("TRUNCATE TABLE jobs, dead_letter_jobs");
         transaction.commit();
     }
 };
