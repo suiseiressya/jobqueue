@@ -38,7 +38,7 @@ migrate:
 
 ## End-to-end crash checks against the test DB (restarts the Postgres container; see the script header)
 crash: build
-	scripts/crash_checks.sh
+	scripts/crash_checks.py
 
 ## Unit + integration tests
 test: build
