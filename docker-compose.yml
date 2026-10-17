@@ -17,5 +17,38 @@ services:
       timeout: 3s
       retries: 15
 
+  # Prometheus metrics read from the DB (D-023); http://localhost:9399/metrics
+  sql-exporter:
+    image: burningalchemist/sql_exporter:0.24.8
+    command: ["-config.file=/etc/sql_exporter/sql_exporter.yml"]
+    ports: ["9399:9399"]
+    volumes:
+      - ./metrics:/etc/sql_exporter:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Scrapes sql-exporter, keeps history; UI http://localhost:9090 (local only)
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on: [sql-exporter]
+
+  # Dashboards on Prometheus; http://localhost:3000, no login (dev only, local only)
+  grafana:
+    image: grafana/grafana:12.1.1
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/jobqueue.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
 volumes:
   pgdata:

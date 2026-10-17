@@ -414,7 +414,7 @@ def main():
     try:
         for name in names:
             print(f"== {name}")
-            sql("TRUNCATE jobs, dead_letter_jobs")
+            sql("TRUNCATE jobs, dead_letter_jobs, job_event_counts")
             CASES[name]()
     finally:
         cleanup()

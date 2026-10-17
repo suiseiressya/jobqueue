@@ -1,0 +1,71 @@
+# Job metrics (D-023). Event names are defined by the triggers in
+# migrations/005_job_event_counts.sql.
+collector_name: jobqueue
+
+metrics:
+  # Monotonic counters kept by triggers, in the same transaction as each transition.
+  # Failed attempts = retried + failed. Survive app restarts; reset only by TRUNCATE.
+  - metric_name: jobqueue_job_events_total
+    type: counter
+    help: "Job transitions committed, by event (enqueued, claimed, completed, retried, recovered, failed, dlq, dlq_retried, cancelled)"
+    key_labels: [event]
+    values: [n]
+    query: |
+      SELECT event, n FROM job_event_counts
+
+  - metric_name: jobqueue_jobs
+    type: gauge
+    help: "Rows in jobs by status right now"
+    key_labels: [status]
+    values: [n]
+    query: |
+      SELECT s.status, count(j.id) AS n
+      FROM (VALUES ('PENDING'), ('RUNNING'), ('DONE'), ('FAILED')) AS s(status)
+      LEFT JOIN jobs j ON j.job_status = s.status
+      GROUP BY s.status
+
+  # Due PENDING rows: what workers could run now. PENDING rows still in backoff are
+  # jobqueue_jobs{status="PENDING"} minus this.
+  - metric_name: jobqueue_queue_depth
+    type: gauge
+    help: "PENDING jobs whose scheduled_at has passed"
+    values: [n]
+    query: |
+      SELECT count(*) AS n FROM jobs WHERE job_status = 'PENDING' AND scheduled_at <= now()
+
+  - metric_name: jobqueue_dlq_jobs
+    type: gauge
+    help: "Jobs currently in the dead letter queue"
+    values: [n]
+    query: |
+      SELECT count(*) AS n FROM dead_letter_jobs
+
+  # Percentiles over a sliding 5-minute window, computed by Postgres on each scrape.
+  # No rows in the window: no series (NULL produces no metric).
+  - metric_name: jobqueue_job_processing_seconds
+    type: gauge
+    help: "completed_at - started_at of jobs that ended DONE or FAILED in the last 5 minutes"
+    key_labels: [quantile]
+    values: [seconds]
+    query: |
+      SELECT q.quantile::text AS quantile,
+             percentile_cont(q.quantile) WITHIN GROUP
+                 (ORDER BY EXTRACT(EPOCH FROM j.completed_at - j.started_at)) AS seconds
+      FROM jobs j CROSS JOIN unnest(ARRAY[0.5, 0.95, 0.99]) AS q(quantile)
+      WHERE j.completed_at > now() - interval '5 minutes' AND j.started_at IS NOT NULL
+      GROUP BY q.quantile
+
+  # First attempt only (retry_count = 0): created_at never changes, so a retry's latency
+  # would include its backoff.
+  - metric_name: jobqueue_job_queue_latency_seconds
+    type: gauge
+    help: "started_at - created_at of first attempts claimed in the last 5 minutes"
+    key_labels: [quantile]
+    values: [seconds]
+    query: |
+      SELECT q.quantile::text AS quantile,
+             percentile_cont(q.quantile) WITHIN GROUP
+                 (ORDER BY EXTRACT(EPOCH FROM j.started_at - j.created_at)) AS seconds
+      FROM jobs j CROSS JOIN unnest(ARRAY[0.5, 0.95, 0.99]) AS q(quantile)
+      WHERE j.started_at > now() - interval '5 minutes' AND j.retry_count = 0
+      GROUP BY q.quantile

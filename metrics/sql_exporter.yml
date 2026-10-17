@@ -1,0 +1,17 @@
+# sql_exporter: turns SQL queries on the jobqueue DB into Prometheus metrics (D-023).
+# The app has no metrics code; everything here is read from Postgres, the system of record.
+# Run with `docker compose up -d`; metrics at http://localhost:9399/metrics.
+global:
+  scrape_timeout_offset: 500ms
+  min_interval: 0s          # query on every scrape
+  max_connections: 2
+  max_idle_connections: 1
+  max_connection_lifetime: 10m
+
+target:
+  # Dev credentials, same as docker-compose.yml. `db` is the compose service name.
+  data_source_name: "postgres://jobqueue:jobqueue@db:5432/jobqueue?sslmode=disable"
+  collectors: [jobqueue]
+
+collector_files:
+  - "*.collector.yml"

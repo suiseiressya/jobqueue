@@ -81,6 +81,7 @@ add_executable(tests
     tests/thread_pool_test.cc
     tests/retry_test.cc
     tests/dlq_test.cc
+    tests/job_events_test.cc
     src/http_server.cc
     src/job_service.cc
     src/job_queue.cc

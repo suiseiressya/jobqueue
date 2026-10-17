@@ -88,3 +88,4 @@ latex/
 *.zip
 
 jobqueue-plan.md
+*.pyc
