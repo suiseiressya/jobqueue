@@ -34,9 +34,11 @@ public:
     size_t ResetRunningToPending();
     std::vector<Job> GetPendingJobOrderByCreatedAt();
 
-    size_t CancelPendingJobById(JobId const&);
+    bool CancelPendingJobById(JobId const&);
 
-    size_t Retry(JobId const&, std::chrono::milliseconds delay, std::string const& error);
-    size_t Fail(JobId const&, std::string const& error);
+    bool Retry(JobId const&, std::chrono::milliseconds delay, std::string const& error);
+    bool Fail(JobId const&, std::string const& error);
     std::vector<Job> GetDuePendingJobs();
+    bool RetryFromDlq(JobId const&);
+    std::vector<Job> GetDlqJobs();
 };

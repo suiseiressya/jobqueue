@@ -176,7 +176,7 @@ std::vector<Job> JobRepository::GetPendingJobOrderByCreatedAt() {
     return jobs;
 }
 
-size_t JobRepository::CancelPendingJobById(JobId const& id) {
+bool JobRepository::CancelPendingJobById(JobId const& id) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
@@ -191,7 +191,7 @@ size_t JobRepository::CancelPendingJobById(JobId const& id) {
 
 // Retrying a (failed) RUNNING job. FAILED means moving to DLQ. 
 // Resets it to PENDING and scheduler will pop it out later. 
-size_t JobRepository::Retry(JobId const& id, std::chrono::milliseconds delay, std::string const& error) {
+bool JobRepository::Retry(JobId const& id, std::chrono::milliseconds delay, std::string const& error) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
@@ -209,8 +209,8 @@ size_t JobRepository::Retry(JobId const& id, std::chrono::milliseconds delay, st
     return result.affected_rows();
 }
 
-// Fail a job. 
-size_t JobRepository::Fail(JobId const& id, std::string const& error) {
+// Fail a job and move to DLQ.
+bool JobRepository::Fail(JobId const& id, std::string const& error) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
@@ -221,9 +221,15 @@ size_t JobRepository::Fail(JobId const& id, std::string const& error) {
         id.ToString(), 
         error
     );
+    if (result.affected_rows() == 0) return 0;
+
+    txn.exec_params(
+        "INSERT INTO dead_letter_jobs (job_id) VALUES ($1)", 
+        id.ToString()
+    );
     txn.commit();
 
-    return result.affected_rows();
+    return 1;
 }
 
 /**
@@ -237,6 +243,56 @@ std::vector<Job> JobRepository::GetDuePendingJobs() {
         " FROM jobs WHERE job_status = 'PENDING' AND scheduled_at <= NOW() "
         "ORDER BY scheduled_at ASC"
     );
+
+    std::vector<Job> jobs;
+    for (auto const& row : result)
+        jobs.push_back(RowToJob(row));
+
+    return jobs;
+}
+
+/**
+ * Retry a job from DLQ. 
+ * Delete the row from dlq and reset the row in jobs
+ */
+bool JobRepository::RetryFromDlq(JobId const& id) {
+    pqxx::work txn(Connection());
+
+    pqxx::result dlq = txn.exec_params(
+        "DELETE FROM dead_letter_jobs WHERE job_id = $1",
+        id.ToString()
+    );
+
+    // nothing happened, then don't commit
+    if (dlq.affected_rows() == 0) return 0;
+    
+    pqxx::result result = txn.exec_params(
+        "UPDATE jobs "
+        "SET job_status = 'PENDING', retry_count = 0, error_message = NULL, updated_at = NOW(), "
+        "completed_at = NULL, scheduled_at = NOW(), started_at = NULL " 
+        "WHERE id = $1 and job_status = 'FAILED' ",
+        
+        id.ToString()
+    );
+    // not FAILED (should not happen): return without commit, the DLQ row stays
+    if (result.affected_rows() == 0) return 0;
+    txn.commit();
+
+    return 1;
+}
+
+/**
+ * Get jobs from DLQ, ordered by moved_at. 
+ */
+std::vector<Job> JobRepository::GetDlqJobs() {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec_params(
+        SELECT_JOB_COLUMNS + " FROM jobs "
+        " JOIN dead_letter_jobs dlq on jobs.id = dlq.job_id "
+        " ORDER BY dlq.moved_at ASC"
+    );
+    txn.commit();
 
     std::vector<Job> jobs;
     for (auto const& row : result)

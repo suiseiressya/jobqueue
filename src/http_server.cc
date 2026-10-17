@@ -116,6 +116,40 @@ void HttpServer::SetupRoutes() {
         }
         res.status = 204;
     });
+
+    /**
+    GET /dlq
+    Get all jobs in the dead letter queue, oldest move first.
+    @return a JSON array of the dead jobs
+    */
+    server_.Get("/dlq", [this](const Request& req, Response& res) {
+        auto arr = Json::array();
+        for (const auto& job : job_service_.GetDlqJobs()) {
+            arr.push_back(JobToJson(job));
+        }
+        res.set_content(arr.dump(), "application/json");
+    });
+
+    /**
+    POST /dlq/:id/retry
+    Take a job out of the dead letter queue and make it PENDING; the scheduler queues it.
+    @return 202 if queued, 404 if the job does not exist, 409 if it is not in the DLQ
+    */
+    server_.Post("/dlq/:id/retry", [this](const Request& req, Response& res) {
+        JobId id = JobId(req.path_params.at("id"));
+        if (!job_service_.RetryFromDlq(id)) {
+            if (!job_service_.GetById(id)) {
+                res.status = 404;
+                res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+            }
+            else {
+                res.status = 409;
+                res.set_content(Json{{"error", "job is not in the DLQ"}}.dump(), "application/json");
+            }
+            return;
+        }
+        res.status = 202;
+    });
 }
 
 bool HttpServer::Listen(const std::string& host, int port) {

@@ -80,6 +80,7 @@ add_executable(tests
     tests/http_server_test.cc
     tests/thread_pool_test.cc
     tests/retry_test.cc
+    tests/dlq_test.cc
     src/http_server.cc
     src/job_service.cc
     src/job_queue.cc
@@ -112,6 +113,7 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     tests/job_service_test.cc
     tests/thread_pool_test.cc
     tests/retry_test.cc
+    tests/dlq_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
@@ -141,6 +143,7 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     tests/job_service_test.cc
     tests/thread_pool_test.cc
     tests/retry_test.cc
+    tests/dlq_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc

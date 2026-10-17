@@ -40,7 +40,7 @@ TEST_CASE("Retry moves a RUNNING job back to PENDING with the error and a later 
     auto id = test_db::InsertJob(conn, "{}", "RUNNING", "1 minute");
     JobRepository repo{conn};
 
-    REQUIRE(repo.Retry(id, 10s, "boom") == 1);
+    REQUIRE(repo.Retry(id, 10s, "boom"));
 
     auto job = repo.GetById(id);
     REQUIRE(job->job_status == kPending);
@@ -51,22 +51,8 @@ TEST_CASE("Retry moves a RUNNING job back to PENDING with the error and a later 
     REQUIRE(wait <= 10);
 
     // No longer RUNNING: the conditional update changes nothing (D-006).
-    REQUIRE(repo.Retry(id, 10s, "again") == 0);
+    REQUIRE_FALSE(repo.Retry(id, 10s, "again"));
     REQUIRE(repo.GetById(id)->retry_count == 1);
-}
-
-TEST_CASE("Fail marks a RUNNING job FAILED with the error and completed_at") {
-    pqxx::connection conn{test_db::kConn};
-    auto id = test_db::InsertJob(conn, "{}", "RUNNING", "1 minute");
-    JobRepository repo{conn};
-
-    REQUIRE(repo.Fail(id, "boom") == 1);
-
-    auto job = repo.GetById(id);
-    REQUIRE(job->job_status == kFailed);
-    REQUIRE(job->error_message == "boom");
-    REQUIRE(test_db::HasTimestamp(conn, id, "completed_at"));
-    REQUIRE(repo.Fail(id, "again") == 0);  // no longer RUNNING (D-006)
 }
 
 TEST_CASE("GetDuePending returns due PENDING rows, earliest scheduled_at first, and skips future ones") {
@@ -146,7 +132,7 @@ TEST_CASE("Fail with retries left puts the job back to PENDING with a backoff an
     REQUIRE(svc.CacheSize() == 0);
 }
 
-TEST_CASE("Fail with the retry budget used up marks the job FAILED with the error") {
+TEST_CASE("Fail with the retry budget used up marks the job FAILED and moves it to the DLQ") {
     pqxx::connection conn{test_db::kConn};
     auto id = test_db::InsertJob(conn, "{}", "PENDING", "1 minute");
     test_db::SetRetryState(conn, id, /*retry_count=*/3, /*max_retries=*/3);
@@ -161,6 +147,7 @@ TEST_CASE("Fail with the retry budget used up marks the job FAILED with the erro
     REQUIRE(job->job_status == kFailed);
     REQUIRE(job->retry_count == 3);
     REQUIRE(job->error_message == "boom");
+    REQUIRE(test_db::InDlq(conn, id));  // slice 2: the final failure dead-letters it
     REQUIRE(svc.CacheSize() == 0);
 }
 
@@ -224,7 +211,7 @@ TEST_CASE("Scheduler hands a PENDING row nobody holds to the pool") {
     REQUIRE(done);
 }
 
-TEST_CASE("A failing job is retried after its backoff and ends FAILED when the budget is used") {
+TEST_CASE("A failing job is retried after its backoff and ends in the DLQ when the budget is used") {
     test_log::ExpectFailureLogs(2);
     pqxx::connection conn{test_db::kConn};
     auto id = test_db::InsertJob(conn, R"({"fail":true})", "PENDING", "1 minute");
@@ -245,4 +232,5 @@ TEST_CASE("A failing job is retried after its backoff and ends FAILED when the b
     auto job = svc.GetById(id);
     REQUIRE(job->retry_count == 1);
     REQUIRE_FALSE(job->error_message.empty());
+    REQUIRE(test_db::InDlq(conn, id));
 }

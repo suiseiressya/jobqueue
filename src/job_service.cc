@@ -80,11 +80,12 @@ std::optional<Job> JobService::WaitAndPop() {
                 continue;
             }
         } catch (std::exception const& e) {
-            // if UpdateJobStatus stale (e.g. DB resets mid-call), job stays in cache but not
+            // if UpdateJobStatus throw (e.g. DB resets mid-call), job stays in cache but not
             // updated DB side mismatch: just drop from cache
+            // scheduler will call it again
             std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
-                        << ": PENDING -> RUNNING skipped, row no longer PENDING in DB "
-                        << std::endl;
+                        << ": PENDING -> RUNNING skipped and threw; row left PENDING for scheduler: "
+                        << e.what() << std::endl;
 
             lock.lock();
             job_cache_.erase(job_id);
@@ -110,7 +111,6 @@ Mark a job from kRunning to kDone in DB and remove from cache
 */
 void JobService::Finish(JobId const& job_id) {
     size_t affected = 0;
-    bool failed = 0;
     try {
         affected = job_repo_.UpdateJobStatus(job_id, kRunning, kDone);
     } catch (...) {
@@ -132,7 +132,7 @@ void JobService::Finish(JobId const& job_id) {
 
 /**
 Retry the job until max_retries with repo.Retry()
-If maxed out retries, call repo.Fail()
+If maxed out retries, call repo.Fail(), which also moves the job to the DLQ
 In either case, job is remove from cache
 */
 void JobService::RetryThenFail(JobId const& job_id, std::string const& error) {
@@ -163,7 +163,7 @@ void JobService::RetryThenFail(JobId const& job_id, std::string const& error) {
     std::lock_guard guard(mut_);
     if (affected == 0)
         std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
-                  << ": RUNNING -> " << (retry ? "PENDING (retry)" : "FAILED ") 
+                  << ": RUNNING -> " << (retry ? "PENDING (retry)" : "FAILED (DLQ) ") 
                   << "skipped, DB row is no longer RUNNING; dropped from cache"
                   << std::endl;
     job_cache_.erase(job_id);
@@ -224,4 +224,12 @@ size_t JobService::EnqueueDueJobs() {
     lock.unlock();
     cv_.notify_all();
     return enqueued;
+}
+
+std::vector<Job> JobService::GetDlqJobs() {
+    return job_repo_.GetDlqJobs();
+}
+
+bool JobService::RetryFromDlq(JobId const& id) {
+    return job_repo_.RetryFromDlq(id);
 }

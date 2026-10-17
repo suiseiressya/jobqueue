@@ -71,6 +71,13 @@ inline double SecondsUntilDue(pqxx::connection& conn, const JobId& id) {
     return row[0].as<double>();
 }
 
+// True if the job has a row in dead_letter_jobs.
+inline bool InDlq(pqxx::connection& conn, const JobId& id) {
+    pqxx::work txn(conn);
+    auto row = txn.exec_params1("SELECT count(*) FROM dead_letter_jobs WHERE job_id = $1", id.ToString());
+    return row[0].as<int>() == 1;
+}
+
 // Terminate every other backend connected to this DB and wait until they are gone.
 // pg_terminate_backend only sends the signal, so poll pg_stat_activity.
 inline void KillOtherConnections(pqxx::connection& conn) {

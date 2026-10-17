@@ -61,10 +61,10 @@ TEST_CASE("CancelPendingJobById delete only PENDING rows") {
     auto id = test_db::InsertJob(conn, "p", "PENDING", "1 minute");
 
     JobRepository repo{conn};
-    REQUIRE(repo.CancelPendingJobById(running) == 0);
-    REQUIRE(repo.CancelPendingJobById(done) == 0);
-    REQUIRE(repo.CancelPendingJobById(failed) == 0);
-    REQUIRE(repo.CancelPendingJobById(id) == 1);
+    REQUIRE_FALSE(repo.CancelPendingJobById(running));
+    REQUIRE_FALSE(repo.CancelPendingJobById(done));
+    REQUIRE_FALSE(repo.CancelPendingJobById(failed));
+    REQUIRE(repo.CancelPendingJobById(id));
     REQUIRE_FALSE(repo.GetById(id).has_value());
 
     REQUIRE(test_db::StatusOf(conn, running) == "RUNNING");
@@ -72,13 +72,13 @@ TEST_CASE("CancelPendingJobById delete only PENDING rows") {
     REQUIRE(test_db::StatusOf(conn, failed) == "FAILED");
 
     // Second cancel finds nothing.
-    REQUIRE(repo.CancelPendingJobById(id) == 0);
+    REQUIRE_FALSE(repo.CancelPendingJobById(id));
 }
 
-TEST_CASE("CancelPendingJobById returns 0 for an unknown id") {
+TEST_CASE("Repository CancelPendingJobById returns false for an unknown id") {
     pqxx::connection conn{test_db::kConn};
     JobRepository repo{conn};
-    REQUIRE(repo.CancelPendingJobById(JobId::Generate()) == 0);
+    REQUIRE_FALSE(repo.CancelPendingJobById(JobId::Generate()));
 }
 
 // --- started_at / completed_at (migration 002) ---
