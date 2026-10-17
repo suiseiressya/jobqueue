@@ -154,18 +154,7 @@ TEST_CASE("Finish marks job DONE in DB and removes it from the cache") {
     REQUIRE(svc.CacheSize() == 0);
 }
 
-TEST_CASE("Fail marks job FAILED in DB and removes it from the cache") {
-    pqxx::connection conn{test_db::kConn};
-    JobRepository repo{conn};
-    JobService svc{repo};
-
-    auto id = svc.Enqueue("{}");
-    REQUIRE(svc.WaitAndPop().has_value());
-
-    svc.Fail(id);
-    REQUIRE(test_db::StatusOf(conn, id) == "FAILED");
-    REQUIRE(svc.CacheSize() == 0);
-}
+// RetryThenFail (retry vs FAILED) is covered in retry_test.cc (S4, D-019).
 
 TEST_CASE("Finish on a row that is no longer RUNNING leaves DB alone but still uncaches") {
     test_log::ExpectFailureLogs(1);

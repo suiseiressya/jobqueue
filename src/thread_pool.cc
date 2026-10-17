@@ -1,9 +1,7 @@
 #include "thread_pool.h"
 
-#include <chrono>
 #include <iostream>
 #include <nlohmann/json.hpp>
-#include <stdexcept>
 #include <syncstream>
 
 using Json = nlohmann::json;
@@ -33,7 +31,7 @@ void ThreadPool::WorkerLoop() {
         // shutdown = true
         if (!job.has_value()) return;
 
-        // only throws if Finish()/Fail() throws. Means that job is still
+        // only throws if Finish()/RetryThenFail() throws. Means that job is still
         // stuck running in DB
         // solved with restart recovery
         try {
@@ -48,17 +46,17 @@ void ThreadPool::WorkerLoop() {
 
 /**
  * Execute the job. 
- * Two outcomes: Fail() or Finish(). Both get reported to the DB and then removed 
+ * Two outcomes: RetryThenFail() or Finish(). Both get reported to the DB and then removed 
  * from current job cache. 
- * If Fail() or Finish() throw, will get up to WorkerLoop(). 
+ * If RetryThenFail() or Finish() throw, will get up to WorkerLoop(). 
  */
 void ThreadPool::Execute(Job const& job) {
     try {
         SimulateWork(job.payload);
     } catch (const std::exception& e) {
-        std::osyncstream(std::cerr) << "[worker] job " << job.id.ToString() << ": work failed, marking FAILED: "
+        std::osyncstream(std::cerr) << "[worker] job " << job.id.ToString() << ": work failed: "
                   << e.what() << std::endl;
-        job_service_.Fail(job.id);
+        job_service_.RetryThenFail(job.id, e.what());
         return;
     }
 

@@ -1,15 +1,12 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include <atomic>
-#include <cstdlib>
-#include <iostream>
 #include <pqxx/pqxx>
 #include <string>
 #include <syncstream>
-#include <thread>
 
 #include "http_server.h"
+#include "scheduler.h"
 #include "thread_pool.h"
 
 int main() {
@@ -43,6 +40,8 @@ int main() {
     JobService job_service(job_repo);
     HttpServer server(job_service);
     ThreadPool thread_pool(job_service);
+    // Brings back retried jobs once due and PENDING rows nobody holds (D-019).
+    Scheduler scheduler(job_service, std::chrono::seconds(1));
 
     try {
         size_t n = job_service.RestartRecovery();
@@ -55,6 +54,7 @@ int main() {
     }
 
     thread_pool.Start();
+    scheduler.Start();  // after the signal mask above, like every thread
 
     // httplib's stop() is a no-op before listen() is running, so a signal that
     // lands too early is lost. Keep waiting: the next signal stops the server.
@@ -75,6 +75,9 @@ int main() {
     listen_returned = true;
     kill(getpid(), SIGTERM);
     signal_thread.join();
+
+    // Scheduler before pool: no new jobs are queued while workers shut down.
+    scheduler.Stop();
 
     // In-flight jobs finish; PENDING jobs stay in the DB for the next start.
     thread_pool.Stop();

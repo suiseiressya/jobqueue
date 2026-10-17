@@ -59,13 +59,14 @@ Job: Job object
 void JobRepository::CreateJob(const Job& job) {
     pqxx::work txn(Connection());
     txn.exec_params(
-        "INSERT INTO jobs (id, payload, job_status, retry_count) "
-        "VALUES ($1, $2::jsonb, $3, $4)",
+        "INSERT INTO jobs (id, payload, job_status, retry_count, max_retries) "
+        "VALUES ($1, $2::jsonb, $3, $4, $5)",
 
         job.id.ToString(),
         nlohmann::json(job.payload).dump(),
         StatusToString(job.job_status),
-        job.retry_count
+        job.retry_count,
+        job.max_retries
     );
     txn.commit();
 }
@@ -76,9 +77,15 @@ static Job RowToJob(pqxx::row const& row) {
     job.payload = row["payload"].c_str();
     job.job_status = StringToStatus(row["job_status"].c_str());
     job.retry_count = row["retry_count"].as<int>();
+    job.max_retries = row["max_retries"].as<int>();
+    job.error_message = row["error_message"].c_str();
 
     return job;
 }
+
+static std::string const SELECT_JOB_COLUMNS =
+    "SELECT id, payload #>> '{}' AS payload, job_status, retry_count, max_retries, "
+    "COALESCE(error_message, '') AS error_message";
 
 /**
 Update status of a Job based on job_id and from_status. 
@@ -111,8 +118,7 @@ std::optional<Job> JobRepository::GetById(JobId const& id) {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec_params(
-        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count FROM jobs "
-        "WHERE id = $1", 
+        SELECT_JOB_COLUMNS + " FROM jobs WHERE id = $1",
         id.ToString()
     );
 
@@ -128,8 +134,7 @@ std::vector<Job> JobRepository::GetAllJobs() {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec(
-        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count "
-        "FROM jobs ORDER BY created_at ASC"
+        SELECT_JOB_COLUMNS + " FROM jobs ORDER BY created_at ASC"
     );
 
     std::vector<Job> jobs;
@@ -160,8 +165,8 @@ std::vector<Job> JobRepository::GetPendingJobOrderByCreatedAt() {
     pqxx::work txn(Connection());
 
     pqxx::result result = txn.exec(
-        "SELECT id, payload #>> '{}' AS payload, job_status, retry_count "
-        "FROM jobs WHERE job_status = 'PENDING' ORDER BY created_at ASC"
+        SELECT_JOB_COLUMNS + 
+        " FROM jobs WHERE job_status = 'PENDING' ORDER BY created_at ASC"
     );
 
     std::vector<Job> jobs;
@@ -182,4 +187,60 @@ size_t JobRepository::CancelPendingJobById(JobId const& id) {
     txn.commit();
 
     return result.affected_rows();
+}
+
+// Retrying a (failed) RUNNING job. FAILED means moving to DLQ. 
+// Resets it to PENDING and scheduler will pop it out later. 
+size_t JobRepository::Retry(JobId const& id, std::chrono::milliseconds delay, std::string const& error) {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec_params(
+        "UPDATE jobs "
+        "SET job_status = 'PENDING', retry_count = retry_count + 1, error_message = $2,"
+        "updated_at = NOW(), started_at = NULL, scheduled_at = MAKE_INTERVAL(secs => $3) + NOW()"
+        "WHERE id = $1 and job_status = 'RUNNING'", 
+
+        id.ToString(), 
+        error, 
+        delay.count() / 1000.0
+    );
+    txn.commit();
+
+    return result.affected_rows();
+}
+
+// Fail a job. 
+size_t JobRepository::Fail(JobId const& id, std::string const& error) {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec_params(
+        "UPDATE jobs "
+        "SET job_status = 'FAILED', error_message = $2, updated_at = NOW(), completed_at = NOW()" 
+        "WHERE id = $1 and job_status = 'RUNNING'", 
+
+        id.ToString(), 
+        error
+    );
+    txn.commit();
+
+    return result.affected_rows();
+}
+
+/**
+ * Get pending jobs with scheduled_at <= NOW(), earliest first
+ */
+std::vector<Job> JobRepository::GetDuePendingJobs() {
+    pqxx::work txn(Connection());
+
+    pqxx::result result = txn.exec(
+        SELECT_JOB_COLUMNS + 
+        " FROM jobs WHERE job_status = 'PENDING' AND scheduled_at <= NOW() "
+        "ORDER BY scheduled_at ASC"
+    );
+
+    std::vector<Job> jobs;
+    for (auto const& row : result)
+        jobs.push_back(RowToJob(row));
+
+    return jobs;
 }

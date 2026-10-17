@@ -14,6 +14,8 @@ static Json JobToJson(const Job& job) {
         {"payload", job.payload},
         {"status", job.job_status},
         {"retry_count", job.retry_count},
+        {"max_retries", job.max_retries},
+        {"error_message", job.error_message},
     };
 }
 

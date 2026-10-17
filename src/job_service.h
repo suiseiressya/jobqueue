@@ -41,7 +41,10 @@ public:
     std::optional<Job> WaitAndPop();
     void Shutdown();
     void Finish(JobId const&);
-    void Fail(JobId const&);
+    void RetryThenFail(JobId const&, std::string const& error);
+    /// Scheduler tick: queue due PENDING rows not already cached (D-016, D-019).
+    /// Returns how many were queued.
+    size_t EnqueueDueJobs();
     size_t RestartRecovery();
 
     /// Number of jobs in the local cache (queued or running). For tests.

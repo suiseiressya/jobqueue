@@ -47,6 +47,8 @@ add_executable(jobqueue
     src/http_server.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/backoff.cc
+    src/scheduler.cc
 )
 
 target_include_directories(jobqueue PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -76,12 +78,15 @@ add_executable(tests
     tests/job_repository_test.cc
     tests/http_server_test.cc
     tests/thread_pool_test.cc
+    tests/retry_test.cc
     src/http_server.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/backoff.cc
+    src/scheduler.cc
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -104,11 +109,14 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     tests/test_database_listener.cc
     tests/job_service_test.cc
     tests/thread_pool_test.cc
+    tests/retry_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/backoff.cc
+    src/scheduler.cc
     src/http_server.cc
 )
 target_include_directories(tests_tsan PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -129,11 +137,14 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     tests/test_database_listener.cc
     tests/job_service_test.cc
     tests/thread_pool_test.cc
+    tests/retry_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/backoff.cc
+    src/scheduler.cc
     src/http_server.cc
 )
 target_include_directories(tests_helgrind PRIVATE ${CMAKE_SOURCE_DIR}/src)

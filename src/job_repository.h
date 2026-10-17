@@ -1,3 +1,5 @@
+#pragma once
+#include <chrono>
 #include <mutex>
 #include <optional>
 #include <pqxx/pqxx>
@@ -33,4 +35,8 @@ public:
     std::vector<Job> GetPendingJobOrderByCreatedAt();
 
     size_t CancelPendingJobById(JobId const&);
+
+    size_t Retry(JobId const&, std::chrono::milliseconds delay, std::string const& error);
+    size_t Fail(JobId const&, std::string const& error);
+    std::vector<Job> GetDuePendingJobs();
 };

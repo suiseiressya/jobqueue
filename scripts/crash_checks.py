@@ -315,8 +315,8 @@ def case_db_restart_live():
     opened lazily, so a worker that never ran a job would open a fresh one after the
     restart and not throw at all.
 
-    Jobs whose Finish() threw stay RUNNING (I-007 known limit) and jobs whose claim threw
-    stay PENDING; only the restart at the end heals those.
+    Jobs whose Finish() threw stay RUNNING until the restart at the end (I-007 known limit).
+    Jobs whose claim threw stay PENDING until the scheduler's next tick runs them.
     """
     n_warmup = NPROC  # one 2 s job per worker
     n_jobs = NPROC // 2 + 1
@@ -357,12 +357,19 @@ def case_db_restart_live():
         check_true("jobs posted after the DB restart run to DONE",
                    wait_for(30, lambda: sql_int(done_after) > 0))
 
+        # Claims that threw left PENDING rows nobody holds. The scheduler must run them while
+        # the app keeps going (D-019); before it existed only a restart did. The first check
+        # makes sure the case still produces such rows (see the warm-up note above).
+        check_true("some claims threw on a dead connection",
+                   "PENDING -> RUNNING skipped" in app.log())
+        pending = "SELECT count(*) FROM jobs WHERE job_status = 'PENDING'"
+        check_true("PENDING rows left by those claims run without a restart",
+                   wait_for(15, lambda: sql_int(pending) == 0))
+
         app.signal(signal.SIGTERM)
         check("exit code 0 on SIGTERM", app.wait(), 0)
         check("log says Stopped cleanly", app.log().count("Stopped cleanly"), 1)
     note(f"RUNNING rows left: {running_count()}")
-    pending = sql_int("SELECT count(*) FROM jobs WHERE job_status = 'PENDING'")
-    note(f"PENDING rows left: {pending}")
 
     check("no job lost", sql_int("SELECT count(*) FROM jobs"), n_warmup + n_jobs + posted_ok)
     restart_and_drain("db_restart_live-restart")

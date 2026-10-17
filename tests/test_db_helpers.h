@@ -47,6 +47,30 @@ inline int CountWithStatus(pqxx::connection& conn, const std::string& status) {
     return row[0].as<int>();
 }
 
+// Set the retry columns directly, e.g. a job that has already used part of its budget.
+inline void SetRetryState(pqxx::connection& conn, const JobId& id, int retry_count, int max_retries) {
+    pqxx::work txn(conn);
+    txn.exec_params("UPDATE jobs SET retry_count = $2, max_retries = $3 WHERE id = $1",
+                    id.ToString(), retry_count, max_retries);
+    txn.commit();
+}
+
+// Move scheduled_at to now() + seconds; a negative value makes the row already due.
+inline void ScheduleIn(pqxx::connection& conn, const JobId& id, int seconds) {
+    pqxx::work txn(conn);
+    txn.exec_params("UPDATE jobs SET scheduled_at = now() + make_interval(secs => $2) WHERE id = $1",
+                    id.ToString(), seconds);
+    txn.commit();
+}
+
+// Seconds from now until the row's scheduled_at (negative once it is due).
+inline double SecondsUntilDue(pqxx::connection& conn, const JobId& id) {
+    pqxx::work txn(conn);
+    auto row = txn.exec_params1("SELECT extract(epoch FROM scheduled_at - now()) FROM jobs WHERE id = $1",
+                                id.ToString());
+    return row[0].as<double>();
+}
+
 // Terminate every other backend connected to this DB and wait until they are gone.
 // pg_terminate_backend only sends the signal, so poll pg_stat_activity.
 inline void KillOtherConnections(pqxx::connection& conn) {

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <iostream>
 #include <syncstream>
+#include "backoff.h"
 
 JobService::JobService(JobRepository& job_repo) : job_repo_(job_repo) {}
 
@@ -130,13 +131,29 @@ void JobService::Finish(JobId const& job_id) {
 }
 
 /**
-Mark a job from kRunning to kFailed in DB and remove from cache
+Retry the job until max_retries with repo.Retry()
+If maxed out retries, call repo.Fail()
+In either case, job is remove from cache
 */
-void JobService::Fail(JobId const& job_id) {
-    size_t affected = 0;
+void JobService::RetryThenFail(JobId const& job_id, std::string const& error) {
+    int retry_count = 0;
+    bool retry = 0;
 
+    {
+        std::lock_guard guard(mut_);
+        auto it = job_cache_.find(job_id);
+        if (it != job_cache_.end()) {
+            retry_count = it->second.retry_count;
+            retry = retry_count < it->second.max_retries;
+        }
+    }
+
+    size_t affected = 0;
     try {
-        affected = job_repo_.UpdateJobStatus(job_id, kRunning, kFailed);
+        // Retry by making the job PENDING again 
+        // or RetryThenFail() if maxed out retries
+        affected = retry ? job_repo_.Retry(job_id, BackoffDelay(retry_count), error)
+                         : job_repo_.Fail(job_id, error);
     } catch (...) {
         std::lock_guard guard(mut_);
         job_cache_.erase(job_id);
@@ -146,7 +163,8 @@ void JobService::Fail(JobId const& job_id) {
     std::lock_guard guard(mut_);
     if (affected == 0)
         std::osyncstream(std::cerr) << "[service] job " << job_id.ToString()
-                  << ": RUNNING -> FAILED skipped, DB row is no longer RUNNING; dropped from cache"
+                  << ": RUNNING -> " << (retry ? "PENDING (retry)" : "FAILED ") 
+                  << "skipped, DB row is no longer RUNNING; dropped from cache"
                   << std::endl;
     job_cache_.erase(job_id);
 }
@@ -184,4 +202,26 @@ bool JobService::CancelPendingJobById(JobId const& id) {
     std::lock_guard lock(mut_);
     job_cache_.erase(id);
     return true;
+}
+
+/*
+Push all scheduled jobs in the db to the queue and notify all workers.
+*/
+size_t JobService::EnqueueDueJobs() {
+    std::vector<Job> jobs = job_repo_.GetDuePendingJobs();
+    std::unique_lock lock(mut_);
+    size_t enqueued = 0;
+    for (auto& job: jobs) {
+        // Already cached = already queued or running (HTTP Enqueue, an earlier tick): skip,
+        // so a job is never queued twice (D-016).
+        if (job_cache_.find(job.id) == job_cache_.end()) {
+            job_cache_[job.id] = job;
+            job_queue_.Push(job.id);
+            enqueued++;
+        }
+    }
+    
+    lock.unlock();
+    cv_.notify_all();
+    return enqueued;
 }

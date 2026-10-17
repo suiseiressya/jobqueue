@@ -16,6 +16,8 @@ struct Job {
     Status job_status;
     std::chrono::system_clock::time_point created_at;
     int retry_count;
+    int max_retries;            
+    std::string error_message;  // last failure message, else ""
 
     Job() {}
     Job(JobId id, const std::string& payload, Status job_status = kPending)
@@ -23,5 +25,6 @@ struct Job {
           payload(payload),
           job_status(job_status),
           created_at(std::chrono::system_clock::now()),
-          retry_count(0) {}
+          retry_count(0),
+          max_retries(3) {}  
 };

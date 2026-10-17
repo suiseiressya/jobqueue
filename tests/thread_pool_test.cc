@@ -110,6 +110,15 @@ TEST_CASE("Execute marks job DONE when fake work succeeds") {
     pool.Stop();
 }
 
+// A row with no retry budget, loaded through EnqueueDueJobs so the cached job carries it:
+// one failure ends it FAILED. Retries are covered in retry_test.cc.
+static JobId EnqueueWithoutRetries(pqxx::connection& conn, JobService& svc, const std::string& payload) {
+    auto id = test_db::InsertJob(conn, payload, "PENDING", "1 minute");
+    test_db::SetRetryState(conn, id, /*retry_count=*/0, /*max_retries=*/0);
+    svc.EnqueueDueJobs();
+    return id;
+}
+
 TEST_CASE("Execute marks job FAILED when payload requests failure") {
     test_log::ExpectFailureLogs(1);
     pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
@@ -118,10 +127,11 @@ TEST_CASE("Execute marks job FAILED when payload requests failure") {
     ThreadPool pool(svc, 2);
     pool.Start();
 
-    auto id = svc.Enqueue(R"({"fail":true})");
-    REQUIRE(WaitForFinalStatus(svc, id) == kFailed);
+    auto id = EnqueueWithoutRetries(conn, svc, R"({"fail":true})");
+    Status status = WaitForFinalStatus(svc, id);
 
-    pool.Stop();
+    pool.Stop();  // before REQUIRE: a failed REQUIRE with workers running aborts the run
+    REQUIRE(status == kFailed);
 }
 
 TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
@@ -133,17 +143,21 @@ TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
     ThreadPool pool(svc, 1);
     pool.Start();
 
-    auto bad_json = svc.Enqueue("not json");
-    auto not_object = svc.Enqueue("[1, 2]");
-    auto bad_type = svc.Enqueue(R"({"sleep_ms":"ten"})");
+    auto bad_json = EnqueueWithoutRetries(conn, svc, "not json");
+    auto not_object = EnqueueWithoutRetries(conn, svc, "[1, 2]");
+    auto bad_type = EnqueueWithoutRetries(conn, svc, R"({"sleep_ms":"ten"})");
     auto good = svc.Enqueue("{}");
 
-    REQUIRE(WaitForFinalStatus(svc, bad_json) == kFailed);
-    REQUIRE(WaitForFinalStatus(svc, not_object) == kFailed);
-    REQUIRE(WaitForFinalStatus(svc, bad_type) == kFailed);
-    REQUIRE(WaitForFinalStatus(svc, good) == kDone);
+    Status bad_json_status = WaitForFinalStatus(svc, bad_json);
+    Status not_object_status = WaitForFinalStatus(svc, not_object);
+    Status bad_type_status = WaitForFinalStatus(svc, bad_type);
+    Status good_status = WaitForFinalStatus(svc, good);
 
-    pool.Stop();
+    pool.Stop();  // before REQUIRE: a failed REQUIRE with workers running aborts the run
+    REQUIRE(bad_json_status == kFailed);
+    REQUIRE(not_object_status == kFailed);
+    REQUIRE(bad_type_status == kFailed);
+    REQUIRE(good_status == kDone);
 }
 
 TEST_CASE("Jobs left RUNNING by a crash are recovered and completed by the pool") {
