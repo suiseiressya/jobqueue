@@ -1,5 +1,7 @@
 #include "thread_pool.h"
 
+#include "payload.h"
+
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <syncstream>
@@ -10,14 +12,13 @@ using Json = nlohmann::json;
  * Simulate work 
  */
 void SimulateWork(const std::string& payload) {
-    Json json = Json::parse(payload);
-    if (!json.is_object()) throw std::invalid_argument("payload is valid JSON but not an object");
+    // Same rules as POST /jobs; a bad row that bypassed POST throws here and is failed.
+    WorkSpec spec = ParsePayload(payload);
 
     // Sleep to simulate work
-    int sleep_ms = json.value("sleep_ms", 0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+    std::this_thread::sleep_for(std::chrono::milliseconds(spec.sleep_ms));
 
-    if (json.value("fail", false)) 
+    if (spec.fail)
         throw std::runtime_error("payload requested failure");
 }
 

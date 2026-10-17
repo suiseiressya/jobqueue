@@ -35,13 +35,13 @@ public:
 TEST_CASE("POST /jobs creates a job") {
     TestFixture f;
 
-    auto res = f.client_.Post("/jobs", R"({"payload":"test-job"})", "application/json");
+    auto res = f.client_.Post("/jobs", R"({"payload":"{\"sleep_ms\":1}"})", "application/json");
 
     REQUIRE(res);
     REQUIRE(res->status == 201);
 
     auto body = Json::parse(res->body);
-    REQUIRE(body["payload"] == "test-job");
+    REQUIRE(body["payload"] == R"({"sleep_ms":1})");
     REQUIRE(body["status"] == 0);
     REQUIRE(body["retry_count"] == 0);
     REQUIRE(body.contains("id"));
@@ -69,6 +69,51 @@ TEST_CASE("POST /jobs returns 400 for missing payload") {
     }
 }
 
+// The payload is the fake-work spec (D-015): a JSON object with optional integer
+// "sleep_ms" and boolean "fail". Anything else is refused at the door, so it never becomes
+// a job; retrying could not fix it.
+TEST_CASE("POST /jobs returns 400 for an invalid payload and creates no job") {
+    TestFixture f;
+
+    auto expect_rejected = [&](const std::string& body) {
+        auto res = f.client_.Post("/jobs", body, "application/json");
+        INFO("body " << body);
+        REQUIRE(res);
+        REQUIRE(res->status == 400);
+        REQUIRE(Json::parse(res->body).contains("error"));
+    };
+
+    SECTION("payload is not a string") {
+        expect_rejected(R"({"payload":5})");
+        expect_rejected(R"({"payload":{"sleep_ms":1}})");
+    }
+    SECTION("payload is not JSON") { expect_rejected(R"({"payload":"not json"})"); }
+    SECTION("payload is JSON but not an object") { expect_rejected(R"({"payload":"[1, 2]"})"); }
+    SECTION("sleep_ms is not an integer") {
+        expect_rejected(R"({"payload":"{\"sleep_ms\":\"ten\"}"})");
+        expect_rejected(R"({"payload":"{\"sleep_ms\":1.5}"})");
+        expect_rejected(R"({"payload":"{\"sleep_ms\":-5}"})");
+    }
+    SECTION("fail is not a boolean") { expect_rejected(R"({"payload":"{\"fail\":1}"})"); }
+
+    auto res = f.client_.Get("/jobs");
+    REQUIRE(res);
+    REQUIRE(Json::parse(res->body).size() == 0);
+}
+
+TEST_CASE("POST /jobs accepts every valid fake-work spec") {
+    TestFixture f;
+
+    for (const char* body : {R"({"payload":"{}"})", R"({"payload":"{\"sleep_ms\":10}"})",
+                             R"({"payload":"{\"fail\":true}"})",
+                             R"({"payload":"{\"sleep_ms\":0,\"fail\":false}"})"}) {
+        auto res = f.client_.Post("/jobs", body, "application/json");
+        INFO("body " << body);
+        REQUIRE(res);
+        REQUIRE(res->status == 201);
+    }
+}
+
 TEST_CASE("GET /jobs returns all jobs") {
     TestFixture f;
 
@@ -77,8 +122,8 @@ TEST_CASE("GET /jobs returns all jobs") {
     REQUIRE(res->status == 200);
     REQUIRE(Json::parse(res->body).size() == 0);
 
-    f.client_.Post("/jobs", R"({"payload":"a"})", "application/json");
-    f.client_.Post("/jobs", R"({"payload":"b"})", "application/json");
+    f.client_.Post("/jobs", R"({"payload":"{}"})", "application/json");
+    f.client_.Post("/jobs", R"({"payload":"{}"})", "application/json");
 
     res = f.client_.Get("/jobs");
     REQUIRE(res);
@@ -89,7 +134,7 @@ TEST_CASE("GET /jobs returns all jobs") {
 TEST_CASE("GET /jobs/:id returns single job") {
     TestFixture f;
 
-    auto create_res = f.client_.Post("/jobs", R"({"payload":"find-me"})", "application/json");
+    auto create_res = f.client_.Post("/jobs", R"({"payload":"{\"sleep_ms\":2}"})", "application/json");
     auto id = Json::parse(create_res->body)["id"].get<std::string>();
 
     auto res = f.client_.Get("/jobs/" + id);
@@ -98,7 +143,7 @@ TEST_CASE("GET /jobs/:id returns single job") {
 
     auto body = Json::parse(res->body);
     REQUIRE(body["id"] == id);
-    REQUIRE(body["payload"] == "find-me");
+    REQUIRE(body["payload"] == R"({"sleep_ms":2})");
 }
 
 TEST_CASE("GET /jobs/:id returns 404 for unknown id") {
@@ -112,7 +157,7 @@ TEST_CASE("GET /jobs/:id returns 404 for unknown id") {
 TEST_CASE("DELETE /jobs/:id deletes a PENDING job") {
     TestFixture f;
 
-    auto create_res = f.client_.Post("/jobs", R"({"payload":"delete-me"})", "application/json");
+    auto create_res = f.client_.Post("/jobs", R"({"payload":"{}"})", "application/json");
     auto id = Json::parse(create_res->body)["id"].get<std::string>();
 
     auto res = f.client_.Delete("/jobs/" + id);

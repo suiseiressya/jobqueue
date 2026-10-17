@@ -134,7 +134,9 @@ TEST_CASE("Execute marks job FAILED when payload requests failure") {
     REQUIRE(status == kFailed);
 }
 
-TEST_CASE("Invalid payload marks job FAILED and the worker keeps running") {
+// POST refuses invalid payloads with 400. Rows written some other way (SQL, rows older than
+// that check) can still reach a worker: it must fail them like any error, not crash.
+TEST_CASE("A bad-payload row that bypassed POST ends FAILED and the worker keeps running") {
     test_log::ExpectFailureLogs(3);
     pqxx::connection conn{"host=localhost port=5433 dbname=test user=jobqueue password=jobqueue"};
     JobRepository repo{conn};

@@ -1,5 +1,7 @@
 #include "http_server.h"
 
+#include "payload.h"
+
 #include <httplib.h>
 
 #include <nlohmann/json.hpp>
@@ -40,7 +42,23 @@ void HttpServer::SetupRoutes() {
             return;
         }
 
-        auto id = job_service_.Enqueue(body["payload"].get<std::string>());
+        if (!body["payload"].is_string()) {
+            res.status = 400;
+            res.set_content(Json{{"error", "'payload' must be a JSON string"}}.dump(), "application/json");
+            return;
+        }
+        std::string payload = body["payload"].get<std::string>();
+
+        // Refuse a payload no worker could run: retrying would never fix it.
+        try {
+            ParsePayload(payload);
+        } catch (const std::invalid_argument& e) {
+            res.status = 400;
+            res.set_content(Json{{"error", e.what()}}.dump(), "application/json");
+            return;
+        }
+
+        auto id = job_service_.Enqueue(payload);
         auto job = job_service_.GetById(id);
 
         res.status = 201;

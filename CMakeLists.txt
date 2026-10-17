@@ -47,6 +47,7 @@ add_executable(jobqueue
     src/http_server.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/payload.cc
     src/backoff.cc
     src/scheduler.cc
 )
@@ -85,6 +86,7 @@ add_executable(tests
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/payload.cc
     src/backoff.cc
     src/scheduler.cc
 )
@@ -115,6 +117,7 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/payload.cc
     src/backoff.cc
     src/scheduler.cc
     src/http_server.cc
@@ -143,6 +146,7 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     src/job_repository.cc
     src/job_id.cc
     src/thread_pool.cc
+    src/payload.cc
     src/backoff.cc
     src/scheduler.cc
     src/http_server.cc
