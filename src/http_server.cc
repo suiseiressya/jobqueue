@@ -21,7 +21,9 @@ static Json JobToJson(const Job& job) {
     };
 }
 
-HttpServer::HttpServer(JobService& job_service) : job_service_(job_service) {
+HttpServer::HttpServer(JobService& job_service, std::optional<RateLimitConfig> rate_limit)
+    : job_service_(job_service) {
+    if (rate_limit) rate_limiter_.emplace(*rate_limit);
     SetupRoutes();
 }
 
@@ -29,6 +31,25 @@ HttpServer::HttpServer(JobService& job_service) : job_service_(job_service) {
 Route setup. All routes go here.
 */
 void HttpServer::SetupRoutes() {
+    /**
+    Rate limit (D-024): one token per request, keyed by client IP. Runs before routing, so a
+    limited request is answered before its body is read or parsed.
+    @return 429 with Retry-After (whole seconds) when the client's bucket is empty
+    */
+    if (rate_limiter_) {
+        server_.set_pre_routing_handler([this](const Request& req, Response& res) {
+            auto decision = rate_limiter_->Take(req.remote_addr);
+            if (decision.allowed) return httplib::Server::HandlerResponse::Unhandled;
+
+            auto seconds = std::max<long long>(
+                1, std::chrono::ceil<std::chrono::seconds>(decision.retry_after).count());
+            res.status = 429;
+            res.set_header("Retry-After", std::to_string(seconds));
+            res.set_content(Json{{"error", "rate limit exceeded"}}.dump(), "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        });
+    }
+
     /**
     POST /jobs, requestbody: {"payload": <job payload>}
     Create a new job with payload and enqueue it.
@@ -158,4 +179,8 @@ bool HttpServer::Listen(const std::string& host, int port) {
 
 void HttpServer::Stop() {
     server_.stop();
+}
+
+bool HttpServer::IsRunning() {
+    return server_.is_running();
 }

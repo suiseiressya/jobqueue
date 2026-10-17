@@ -36,9 +36,28 @@ int main() {
         return 1;
     }
 
+    // Per-IP rate limit (D-024): JOBQUEUE_RATE_LIMIT_RPS requests/s, burst 2x; 0 = off
+    // (load tests from one IP). Default 50/s.
+    double rate_limit_rps = 50;
+    if (const char* rps_env = std::getenv("JOBQUEUE_RATE_LIMIT_RPS")) {
+        try {
+            rate_limit_rps = std::stod(rps_env);
+        } catch (const std::exception&) {
+            rate_limit_rps = -1;
+        }
+        if (rate_limit_rps < 0) {
+            std::osyncstream(std::cerr) << "JOBQUEUE_RATE_LIMIT_RPS must be a number >= 0\n";
+            return 1;
+        }
+    }
+    std::optional<RateLimitConfig> rate_limit;
+    if (rate_limit_rps > 0) rate_limit = RateLimitConfig{rate_limit_rps, 2 * rate_limit_rps};
+    std::cout << "Rate limit: "
+              << (rate_limit ? std::to_string(rate_limit_rps) + " req/s per IP" : "off") << "\n";
+
     JobRepository job_repo(connection_string);
     JobService job_service(job_repo);
-    HttpServer server(job_service);
+    HttpServer server(job_service, rate_limit);
     ThreadPool thread_pool(job_service);
     // Brings back retried jobs once due and PENDING rows nobody holds (D-019).
     Scheduler scheduler(job_service, std::chrono::seconds(1));

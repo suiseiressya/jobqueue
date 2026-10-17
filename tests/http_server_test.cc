@@ -15,10 +15,10 @@ public:
     JobService job_service_{job_repo_};
     HttpServer server_{job_service_};
     std::thread server_thread_;
-    httplib::Client client_{"localhost", 9090};
+    httplib::Client client_{"localhost", 9095};
 
     TestFixture() {
-        server_thread_ = std::thread([this] { server_.Listen("127.0.0.1", 9090); });
+        server_thread_ = std::thread([this] { server_.Listen("127.0.0.1", 9095); });
         client_.set_connection_timeout(2);
         while (!client_.Get("/jobs")) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));

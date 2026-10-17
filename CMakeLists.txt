@@ -50,6 +50,7 @@ add_executable(jobqueue
     src/payload.cc
     src/backoff.cc
     src/scheduler.cc
+    src/rate_limiter.cc
 )
 
 target_include_directories(jobqueue PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -81,6 +82,7 @@ add_executable(tests
     tests/thread_pool_test.cc
     tests/retry_test.cc
     tests/dlq_test.cc
+    tests/rate_limiter_test.cc
     tests/job_events_test.cc
     src/http_server.cc
     src/job_service.cc
@@ -91,6 +93,7 @@ add_executable(tests
     src/payload.cc
     src/backoff.cc
     src/scheduler.cc
+    src/rate_limiter.cc
 )
 
 target_include_directories(tests PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -115,6 +118,7 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     tests/thread_pool_test.cc
     tests/retry_test.cc
     tests/dlq_test.cc
+    tests/rate_limiter_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
@@ -123,6 +127,7 @@ add_executable(tests_tsan EXCLUDE_FROM_ALL
     src/payload.cc
     src/backoff.cc
     src/scheduler.cc
+    src/rate_limiter.cc
     src/http_server.cc
 )
 target_include_directories(tests_tsan PRIVATE ${CMAKE_SOURCE_DIR}/src)
@@ -145,6 +150,7 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     tests/thread_pool_test.cc
     tests/retry_test.cc
     tests/dlq_test.cc
+    tests/rate_limiter_test.cc
     src/job_service.cc
     src/job_queue.cc
     src/job_repository.cc
@@ -153,6 +159,7 @@ add_executable(tests_helgrind EXCLUDE_FROM_ALL
     src/payload.cc
     src/backoff.cc
     src/scheduler.cc
+    src/rate_limiter.cc
     src/http_server.cc
 )
 target_include_directories(tests_helgrind PRIVATE ${CMAKE_SOURCE_DIR}/src)
