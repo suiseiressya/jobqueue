@@ -1,6 +1,5 @@
 #include "payload.h"
 
-#include <limits>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 
@@ -16,8 +15,9 @@ WorkSpec ParsePayload(const std::string& payload) {
         const Json& sleep = json["sleep_ms"];
         // is_number_integer rejects 1.5 and "ten"; the range check keeps get<int> exact.
         if (!sleep.is_number_integer() || sleep.get<long long>() < 0 ||
-            sleep.get<long long>() > std::numeric_limits<int>::max()) {
-            throw std::invalid_argument("'sleep_ms' must be a non-negative integer");
+            sleep.get<long long>() > kMaxSleepMs) {
+            throw std::invalid_argument("'sleep_ms' must be an integer from 0 to " +
+                                        std::to_string(kMaxSleepMs));
         }
         spec.sleep_ms = sleep.get<int>();
     }

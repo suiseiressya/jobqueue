@@ -1,7 +1,10 @@
 #pragma once
 #include <string>
 
-/// Fake-work spec carried in a job's payload (D-015): {"sleep_ms": int >= 0, "fail": bool},
+/// Upper bound on sleep_ms: without it, a few jobs with a huge sleep hold every worker for days.
+inline constexpr int kMaxSleepMs = 60'000;
+
+/// Fake-work spec carried in a job's payload (D-015): {"sleep_ms": 0..kMaxSleepMs, "fail": bool},
 /// both optional; other keys are ignored.
 struct WorkSpec {
     int sleep_ms = 0;
