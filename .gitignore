@@ -89,3 +89,4 @@ latex/
 
 jobqueue-plan.md
 *.pyc
+output.txt

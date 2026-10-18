@@ -2,7 +2,7 @@ JOBS := $(shell nproc)
 BUILD_DIR := build
 PG_CONN := host=localhost port=5433 dbname=jobqueue user=jobqueue password=jobqueue
 
-.PHONY: all build run start test tsan helgrind memcheck configure clean distclean migrate crash
+.PHONY: all build run start test tsan helgrind memcheck configure clean distclean migrate crash bench
 
 all: build
 
@@ -22,6 +22,10 @@ run: build
 start:
 	@test -x $(BUILD_DIR)/jobqueue || { echo "No binary at $(BUILD_DIR)/jobqueue - run 'make build' first"; exit 1; }
 	JOBQUEUE_PG_CONN="$(PG_CONN)" ./$(BUILD_DIR)/jobqueue
+
+## k6 load test against a running server (start it with JOBQUEUE_RATE_LIMIT_RPS=0). See benchmarks/README.md.
+bench:
+	docker run --rm -i --network host -v "$(CURDIR)/benchmarks:/bench:ro" grafana/k6:1.1.0 run $(K6_ARGS) /bench/post_jobs.js
 
 ## Create the test DB if missing and apply migrations/*.sql to jobqueue and test.
 ## Works on existing volumes (initdb.d only runs on a fresh one). Migrations must be idempotent.
