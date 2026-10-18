@@ -5,7 +5,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "job.h"
 #include "job_repository.h"
@@ -17,8 +19,10 @@ namespace {
 
 long EventCount(pqxx::connection& conn, const std::string& event) {
     pqxx::work txn(conn);
-    auto result = txn.exec_params("SELECT n FROM job_event_counts WHERE event = $1", event);
-    return result.empty() ? 0 : result[0][0].as<long>();
+    // Each event is spread over several rows (D-026); the count is their sum.
+    auto row = txn.exec_params1("SELECT coalesce(sum(n), 0) FROM job_event_counts WHERE event = $1",
+                                event);
+    return row[0].as<long>();
 }
 
 }  // namespace
@@ -95,4 +99,40 @@ TEST_CASE("An UPDATE that keeps job_status counts nothing") {
 
     pqxx::work txn(conn);
     REQUIRE(txn.exec1("SELECT sum(n) FROM job_event_counts")[0].as<long>() == 1);  // the insert
+}
+
+// D-026: one counter row per event serialized every transition of that kind: each transaction
+// held the row lock until its commit. Counters are now spread over rows by backend, so
+// transitions on different connections never wait for each other.
+TEST_CASE("Concurrent transitions on different connections do not wait on a counter row") {
+    auto shard_of = [](pqxx::connection& c) {
+        pqxx::nontransaction txn(c);
+        return txn.exec1("SELECT pg_backend_pid() % 64")[0].as<int>();
+    };
+    auto insert_job = [](pqxx::work& txn) {
+        txn.exec_params("INSERT INTO jobs (id, payload, job_status) VALUES ($1, '{}', 'PENDING')",
+                        JobId::Generate().ToString());
+    };
+
+    pqxx::connection holder{test_db::kConn};
+    // Two backends can share a shard (pid % 64); pick one that does not.
+    std::vector<std::unique_ptr<pqxx::connection>> conns;
+    conns.push_back(std::make_unique<pqxx::connection>(test_db::kConn));
+    while (shard_of(*conns.back()) == shard_of(holder))
+        conns.push_back(std::make_unique<pqxx::connection>(test_db::kConn));
+    pqxx::connection& other = *conns.back();
+
+    pqxx::work held(holder);
+    insert_job(held);  // counted, not committed: its counter row stays locked
+
+    {
+        pqxx::work txn(other);
+        txn.exec("SET LOCAL lock_timeout = '1s'");
+        insert_job(txn);  // with one row per event this waits on `held` and times out
+        txn.commit();
+    }
+    held.commit();
+
+    pqxx::connection conn{test_db::kConn};
+    REQUIRE(EventCount(conn, "enqueued") == 2);
 }

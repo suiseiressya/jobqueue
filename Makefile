@@ -23,7 +23,7 @@ start:
 	@test -x $(BUILD_DIR)/jobqueue || { echo "No binary at $(BUILD_DIR)/jobqueue - run 'make build' first"; exit 1; }
 	JOBQUEUE_PG_CONN="$(PG_CONN)" ./$(BUILD_DIR)/jobqueue
 
-## k6 load test against a running server (start it with JOBQUEUE_RATE_LIMIT_RPS=0). See benchmarks/README.md.
+## k6 load test against a running server (start it with JOBQUEUE_RATE_LIMIT_RPS=0).
 bench:
 	docker run --rm -i --network host -v "$(CURDIR)/benchmarks:/bench:ro" grafana/k6:1.1.0 run $(K6_ARGS) /bench/post_jobs.js
 

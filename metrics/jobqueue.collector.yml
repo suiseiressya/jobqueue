@@ -1,5 +1,5 @@
 # Job metrics (D-023). Event names are defined by the triggers in
-# migrations/005_job_event_counts.sql.
+# migrations/005_job_event_counts.sql; each event is spread over rows by shard (006, D-026).
 collector_name: jobqueue
 
 metrics:
@@ -11,7 +11,7 @@ metrics:
     key_labels: [event]
     values: [n]
     query: |
-      SELECT event, n FROM job_event_counts
+      SELECT event, sum(n) AS n FROM job_event_counts GROUP BY event
 
   - metric_name: jobqueue_jobs
     type: gauge
