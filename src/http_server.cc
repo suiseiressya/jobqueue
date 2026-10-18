@@ -4,7 +4,11 @@
 
 #include <httplib.h>
 
+#include <algorithm>
+#include <cctype>
+#include <iostream>
 #include <nlohmann/json.hpp>
+#include <syncstream>
 
 using Json = nlohmann::json;
 using Request = httplib::Request;
@@ -21,6 +25,32 @@ static Json JobToJson(const Job& job) {
     };
 }
 
+/// Every error response has the same shape: {"error": "<message>"}.
+static void SendError(Response& res, int status, const std::string& message) {
+    res.status = status;
+    res.set_content(Json{{"error", message}}.dump(), "application/json");
+}
+
+/// Parse the :id path parameter; a malformed id is the client's mistake, so 400, not 500.
+static std::optional<JobId> ParseJobId(const Request& req, Response& res) {
+    try {
+        return JobId(req.path_params.at("id"));
+    } catch (const std::invalid_argument& e) {
+        SendError(res, 400, e.what());
+        return std::nullopt;
+    }
+}
+
+/// True if the Content-Type media type is application/json (any case, parameters ignored).
+static bool IsJsonContentType(const Request& req) {
+    auto type = req.get_header_value("Content-Type");
+    type = type.substr(0, type.find(';'));
+    std::erase_if(type, [](unsigned char c) { return std::isspace(c); });
+    std::transform(type.begin(), type.end(), type.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return type == "application/json";
+}
+
 HttpServer::HttpServer(JobService& job_service, std::optional<RateLimitConfig> rate_limit)
     : job_service_(job_service) {
     if (rate_limit) rate_limiter_.emplace(*rate_limit);
@@ -32,23 +62,63 @@ Route setup. All routes go here.
 */
 void HttpServer::SetupRoutes() {
     /**
-    Rate limit (D-024): one token per request, keyed by client IP. Runs before routing, so a
-    limited request is answered before its body is read or parsed.
-    @return 429 with Retry-After (whole seconds) when the client's bucket is empty
+    Runs before routing, so a refused request is answered before its body is read or parsed.
+    1. Rate limit (D-024): one token per request, keyed by client IP.
+       @return 429 with Retry-After (whole seconds) when the client's bucket is empty
+    2. Body framing: a POST needs Content-Length. httplib checks kMaxBodyBytes against
+       Content-Length only; a chunked body would be buffered with no limit, and a body with
+       neither header is read until the client closes the connection.
+       @return 411 for a POST without Content-Length
     */
-    if (rate_limiter_) {
-        server_.set_pre_routing_handler([this](const Request& req, Response& res) {
+    server_.set_pre_routing_handler([this](const Request& req, Response& res) {
+        if (rate_limiter_) {
             auto decision = rate_limiter_->Take(req.remote_addr);
-            if (decision.allowed) return httplib::Server::HandlerResponse::Unhandled;
+            if (!decision.allowed) {
+                auto seconds = std::max<long long>(
+                    1, std::chrono::ceil<std::chrono::seconds>(decision.retry_after).count());
+                res.set_header("Retry-After", std::to_string(seconds));
+                SendError(res, 429, "rate limit exceeded");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
 
-            auto seconds = std::max<long long>(
-                1, std::chrono::ceil<std::chrono::seconds>(decision.retry_after).count());
-            res.status = 429;
-            res.set_header("Retry-After", std::to_string(seconds));
-            res.set_content(Json{{"error", "rate limit exceeded"}}.dump(), "application/json");
+        if (req.method == "POST" && !req.has_header("Content-Length")) {
+            SendError(res, 411, "Content-Length required");
             return httplib::Server::HandlerResponse::Handled;
-        });
-    }
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
+    /// 413 for a body over kMaxBodyBytes; httplib skips the body without buffering it.
+    server_.set_payload_max_length(kMaxBodyBytes);
+
+    /**
+    Errors httplib produces itself (unknown route 404, 413, unreadable body 400) have no body;
+    give them the same JSON shape as ours. Responses that already have a body are left alone.
+    */
+    server_.set_error_handler([](const Request& req, Response& res) {
+        if (!res.body.empty()) return httplib::Server::HandlerResponse::Unhandled;
+        SendError(res, res.status, httplib::status_message(res.status));
+        return httplib::Server::HandlerResponse::Handled;
+    });
+
+    /**
+    An exception escaping a route (e.g. the DB is down) is logged here and answered with a
+    generic 500. Without this handler httplib copies e.what() into an EXCEPTION_WHAT header,
+    which can carry connection details to the client.
+    */
+    server_.set_exception_handler([](const Request& req, Response& res, std::exception_ptr ep) {
+        std::string what = "unknown exception";
+        try {
+            std::rethrow_exception(ep);
+        } catch (const std::exception& e) {
+            what = e.what();
+        } catch (...) {
+        }
+        std::osyncstream(std::cerr)
+            << "HTTP " << req.method << " " << req.path << " failed: " << what << std::endl;
+        SendError(res, 500, "internal server error");
+    });
 
     /**
     POST /jobs, requestbody: {"payload": <job payload>}
@@ -56,16 +126,19 @@ void HttpServer::SetupRoutes() {
     @return a JSON object of the created job
     */
     server_.Post("/jobs", [this](const Request& req, Response& res) {
+        if (!IsJsonContentType(req)) {
+            SendError(res, 415, "Content-Type must be application/json");
+            return;
+        }
+
         auto body = Json::parse(req.body, nullptr, false);
         if (body.is_discarded() || !body.contains("payload")) {
-            res.status = 400;
-            res.set_content(Json{{"error", "missing 'payload' field"}}.dump(), "application/json");
+            SendError(res, 400, "missing 'payload' field");
             return;
         }
 
         if (!body["payload"].is_string()) {
-            res.status = 400;
-            res.set_content(Json{{"error", "'payload' must be a JSON string"}}.dump(), "application/json");
+            SendError(res, 400, "'payload' must be a JSON string");
             return;
         }
         std::string payload = body["payload"].get<std::string>();
@@ -74,8 +147,7 @@ void HttpServer::SetupRoutes() {
         try {
             ParsePayload(payload);
         } catch (const std::invalid_argument& e) {
-            res.status = 400;
-            res.set_content(Json{{"error", e.what()}}.dump(), "application/json");
+            SendError(res, 400, e.what());
             return;
         }
 
@@ -106,10 +178,11 @@ void HttpServer::SetupRoutes() {
     @return a JSON object with the job found, or 404 if not found
     */
     server_.Get("/jobs/:id", [this](const Request& req, Response& res) {
-        auto job = job_service_.GetById(JobId(req.path_params.at("id")));
+        auto id = ParseJobId(req, res);
+        if (!id) return;
+        auto job = job_service_.GetById(*id);
         if (!job) {
-            res.status = 404;
-            res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+            SendError(res, 404, "job not found");
             return;
         }
         res.set_content(JobToJson(*job).dump(), "application/json");
@@ -121,17 +194,16 @@ void HttpServer::SetupRoutes() {
     @return 204 if success, 404 if fail
     */
     server_.Delete("/jobs/:id", [this](const Request& req, Response& res) {
-        JobId id = JobId(req.path_params.at("id"));
-        auto cancelled = job_service_.CancelPendingJobById(id);
+        auto id = ParseJobId(req, res);
+        if (!id) return;
+        auto cancelled = job_service_.CancelPendingJobById(*id);
         if (!cancelled) {
-            auto job = job_service_.GetById(id);
+            auto job = job_service_.GetById(*id);
             if (!job) {
-                res.status = 404;
-                res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+                SendError(res, 404, "job not found");
             }
             else {
-                res.status = 409;
-                res.set_content(Json{{"error", "job is not PENDING"}}.dump(), "application/json");
+                SendError(res, 409, "job is not PENDING");
             }
             return;
         }
@@ -157,15 +229,14 @@ void HttpServer::SetupRoutes() {
     @return 202 if queued, 404 if the job does not exist, 409 if it is not in the DLQ
     */
     server_.Post("/dlq/:id/retry", [this](const Request& req, Response& res) {
-        JobId id = JobId(req.path_params.at("id"));
-        if (!job_service_.RetryFromDlq(id)) {
-            if (!job_service_.GetById(id)) {
-                res.status = 404;
-                res.set_content(Json{{"error", "job not found"}}.dump(), "application/json");
+        auto id = ParseJobId(req, res);
+        if (!id) return;
+        if (!job_service_.RetryFromDlq(*id)) {
+            if (!job_service_.GetById(*id)) {
+                SendError(res, 404, "job not found");
             }
             else {
-                res.status = 409;
-                res.set_content(Json{{"error", "job is not in the DLQ"}}.dump(), "application/json");
+                SendError(res, 409, "job is not in the DLQ");
             }
             return;
         }

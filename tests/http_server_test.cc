@@ -5,6 +5,8 @@
 #include <thread>
 
 #include "http_server.h"
+#include "test_db_helpers.h"
+#include "test_log_helpers.h"
 
 using Json = nlohmann::json;
 
@@ -196,4 +198,97 @@ TEST_CASE("DELETE /jobs/:id returns 404 for unknown id") {
     auto res = f.client_.Delete("/jobs/00000000-0000-0000-0000-000000000000");
     REQUIRE(res);
     REQUIRE(res->status == 404);
+}
+
+// --- S5 slice 3: input validation. Every error is a JSON object {"error": "..."}, including
+// the ones httplib produces itself (unknown route, oversized body) and uncaught exceptions.
+
+namespace {
+
+void RequireJsonError(const httplib::Result& res, int status) {
+    REQUIRE(res);
+    REQUIRE(res->status == status);
+    REQUIRE(res->get_header_value("Content-Type") == "application/json");
+    auto body = Json::parse(res->body);
+    REQUIRE(body["error"].is_string());
+    REQUIRE_FALSE(body["error"].get<std::string>().empty());
+}
+
+}  // namespace
+
+TEST_CASE("POST /jobs needs a JSON content type, else 415 and no job") {
+    TestFixture f;
+    const std::string body = R"({"payload":"{}"})";
+
+    RequireJsonError(f.client_.Post("/jobs", body, "text/plain"), 415);
+    RequireJsonError(f.client_.Post("/jobs", body, "application/x-www-form-urlencoded"), 415);
+    REQUIRE(test_db::CountWithStatus(f.conn_, "PENDING") == 0);
+
+    auto with_charset = f.client_.Post("/jobs", body, "Application/JSON; charset=utf-8");
+    REQUIRE(with_charset);
+    REQUIRE(with_charset->status == 201);
+}
+
+TEST_CASE("A body over the size limit gets 413 and is never parsed") {
+    TestFixture f;
+    std::string big =
+        R"({"payload":"{}","pad":")" + std::string(HttpServer::kMaxBodyBytes, 'x') + R"("})";
+
+    RequireJsonError(f.client_.Post("/jobs", big, "application/json"), 413);
+    REQUIRE(test_db::CountWithStatus(f.conn_, "PENDING") == 0);
+
+    // the connection is still usable afterwards
+    auto ok = f.client_.Post("/jobs", R"({"payload":"{}"})", "application/json");
+    REQUIRE(ok);
+    REQUIRE(ok->status == 201);
+}
+
+// httplib does not apply the size limit to chunked bodies, so they are refused outright.
+TEST_CASE("A POST without Content-Length gets 411") {
+    TestFixture f;
+    auto res = f.client_.Post(
+        "/jobs",
+        [](size_t, httplib::DataSink& sink) {
+            sink.write(R"({"payload":"{}"})", 16);
+            sink.done();
+            return true;
+        },
+        "application/json");
+
+    RequireJsonError(res, 411);
+    REQUIRE(test_db::CountWithStatus(f.conn_, "PENDING") == 0);
+}
+
+TEST_CASE("A malformed job id gets 400, not 500") {
+    TestFixture f;
+    RequireJsonError(f.client_.Get("/jobs/not-a-uuid"), 400);
+    RequireJsonError(f.client_.Delete("/jobs/not-a-uuid"), 400);
+    RequireJsonError(f.client_.Post("/dlq/not-a-uuid/retry"), 400);
+}
+
+TEST_CASE("Errors httplib produces itself are JSON too") {
+    TestFixture f;
+    RequireJsonError(f.client_.Get("/nope"), 404);
+    RequireJsonError(f.client_.Post("/nope", "{}", "application/json"), 404);
+}
+
+TEST_CASE("An uncaught exception is a JSON 500 that does not leak its message") {
+    // No DB behind this repository: every call throws pqxx::broken_connection.
+    JobRepository repo{std::string{"host=127.0.0.1 port=1 connect_timeout=1"}};
+    JobService svc{repo};
+    HttpServer server{svc};
+    std::thread server_thread([&] { server.Listen("127.0.0.1", 9096); });
+    httplib::Client client{"localhost", 9096};
+    client.set_connection_timeout(2);
+    while (!server.IsRunning()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    test_log::ExpectFailureLogs(1);
+    auto res = client.Get("/jobs");
+    client.stop();
+    server.Stop();
+    server_thread.join();
+
+    RequireJsonError(res, 500);
+    REQUIRE_FALSE(res->has_header("EXCEPTION_WHAT"));
+    REQUIRE(Json::parse(res->body)["error"] == "internal server error");
 }

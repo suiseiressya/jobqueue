@@ -23,6 +23,9 @@ private:
     void SetupRoutes();
 
 public:
+    /// largest request body accepted
+    static constexpr size_t kMaxBodyBytes = 64 * 1024;
+
     explicit HttpServer(JobService& job_service,
                         std::optional<RateLimitConfig> rate_limit = std::nullopt);
     bool Listen(const std::string& host, int port);
