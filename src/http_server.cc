@@ -54,6 +54,9 @@ static bool IsJsonContentType(const Request& req) {
 HttpServer::HttpServer(JobService& job_service, std::optional<RateLimitConfig> rate_limit)
     : job_service_(job_service) {
     if (rate_limit) rate_limiter_.emplace(*rate_limit);
+    // Without it, Nagle's algorithm plus the client's delayed ACK adds ~40 ms to every request
+    // on a keep-alive connection (httplib's default is off).
+    server_.set_tcp_nodelay(true);
     SetupRoutes();
 }
 

@@ -2,7 +2,10 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <thread>
+#include <vector>
 
 #include "http_server.h"
 #include "test_db_helpers.h"
@@ -291,4 +294,28 @@ TEST_CASE("An uncaught exception is a JSON 500 that does not leak its message") 
     RequireJsonError(res, 500);
     REQUIRE_FALSE(res->has_header("EXCEPTION_WHAT"));
     REQUIRE(Json::parse(res->body)["error"] == "internal server error");
+}
+
+// With Nagle's algorithm on, the server held its next small write until the client ACKed the
+// previous one, and Linux delays that ACK by up to 40 ms: every request on a reused (keep-alive)
+// connection took ~41 ms instead of ~1 ms (notes/benchmarks.md). TCP_NODELAY removes it.
+TEST_CASE("Requests on a keep-alive connection are not delayed by Nagle's algorithm") {
+    TestFixture f;
+    f.client_.set_keep_alive(true);
+    const std::string missing = "/jobs/00000000-0000-0000-0000-000000000000";
+    REQUIRE(f.client_.Get(missing));  // opens the connection
+
+    std::vector<double> ms;
+    for (int i = 0; i < 10; i++) {
+        auto start = std::chrono::steady_clock::now();
+        auto res = f.client_.Get(missing);
+        ms.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
+                                                                start)
+                         .count());
+        REQUIRE(res);
+        REQUIRE(res->status == 404);
+    }
+    std::sort(ms.begin(), ms.end());
+    INFO("median " << ms[ms.size() / 2] << " ms");
+    REQUIRE(ms[ms.size() / 2] < 20);  // 40 ms delayed ACK when Nagle is on
 }
